@@ -7,7 +7,7 @@
 
  *low-p-temp-boards.py : communicates with low precision temperature boards using SPI communications. 3 boards and uses heater relays 21-26?  
  Test2.py : testing UART communication between the two raspberry pis.  
- relay.py : example of basic relay commincation.  
+ *relay.py : example of basic relay communication. Updated to be able to toggle relays on RPi1 and RPi2 from RPi1   
  temp_sensor.py : communicates with and querries temperature. Writes temperaure to other raspberry pi using serial communication. Paired with temp_feed.py. [replaced temp2.py]  
  tcs.py : temperature control front end for characterization (derived from tcs.ui)  
  PID_final.py : empty  
@@ -28,6 +28,7 @@
  temp_feed.py : sets up serial communication between raspberry pis.   
  TEMP.py : basic function for measuring temperature of a single high precision sensor.  
  *PID.py : Downloaded python PID controller. Functions used in other scripts.  
+ *relay_feed.py : UART script to toggle relays on RPi2 from RPi1 via relay.py 
 
 --------------------------------------------------------------------------------
 ## Need to:  
