@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'tcs.ui'
+# Form implementation generated from reading ui file 'tcs2.ui'
 #
 # Created by: PyQt5 UI code generator 5.5.1
 #
@@ -266,12 +266,12 @@ class Ui_TCS(object):
         self.gb_diodetop = QtWidgets.QGroupBox(self.gb_lpsensorstop)
         self.gb_diodetop.setGeometry(QtCore.QRect(10, 410, 271, 381))
         self.gb_diodetop.setObjectName("gb_diodetop")
-        self.cb_lp21_top = QtWidgets.QCheckBox(self.gb_diodetop)
-        self.cb_lp21_top.setGeometry(QtCore.QRect(140, 70, 105, 20))
-        self.cb_lp21_top.setObjectName("cb_lp21_top")
-        self.cb_lp23_top = QtWidgets.QCheckBox(self.gb_diodetop)
-        self.cb_lp23_top.setGeometry(QtCore.QRect(140, 110, 105, 20))
-        self.cb_lp23_top.setObjectName("cb_lp23_top")
+        self.cb_lp20_top = QtWidgets.QCheckBox(self.gb_diodetop)
+        self.cb_lp20_top.setGeometry(QtCore.QRect(140, 70, 105, 20))
+        self.cb_lp20_top.setObjectName("cb_lp20_top")
+        self.cb_lp21_top_2 = QtWidgets.QCheckBox(self.gb_diodetop)
+        self.cb_lp21_top_2.setGeometry(QtCore.QRect(140, 110, 105, 20))
+        self.cb_lp21_top_2.setObjectName("cb_lp21_top_2")
         self.cb_lp13_top = QtWidgets.QCheckBox(self.gb_diodetop)
         self.cb_lp13_top.setGeometry(QtCore.QRect(20, 270, 105, 20))
         self.cb_lp13_top.setObjectName("cb_lp13_top")
@@ -287,9 +287,9 @@ class Ui_TCS(object):
         self.cb_lp7_top = QtWidgets.QCheckBox(self.gb_diodetop)
         self.cb_lp7_top.setGeometry(QtCore.QRect(20, 150, 105, 20))
         self.cb_lp7_top.setObjectName("cb_lp7_top")
-        self.cb_lp17_btm_2 = QtWidgets.QCheckBox(self.gb_diodetop)
-        self.cb_lp17_btm_2.setGeometry(QtCore.QRect(20, 350, 105, 20))
-        self.cb_lp17_btm_2.setObjectName("cb_lp17_btm_2")
+        self.cb_lp17_top = QtWidgets.QCheckBox(self.gb_diodetop)
+        self.cb_lp17_top.setGeometry(QtCore.QRect(20, 350, 105, 20))
+        self.cb_lp17_top.setObjectName("cb_lp17_top")
         self.cb_lp5_top = QtWidgets.QCheckBox(self.gb_diodetop)
         self.cb_lp5_top.setGeometry(QtCore.QRect(20, 110, 105, 20))
         self.cb_lp5_top.setObjectName("cb_lp5_top")
@@ -549,14 +549,14 @@ class Ui_TCS(object):
         self.cb_lp16_top.setText(_translate("TCS", "16: --- C"))
         self.cb_lp18_top.setText(_translate("TCS", "18: --- C"))
         self.gb_diodetop.setTitle(_translate("TCS", "Diodes"))
-        self.cb_lp21_top.setText(_translate("TCS", "21: --- C"))
-        self.cb_lp23_top.setText(_translate("TCS", "23: --- C"))
+        self.cb_lp20_top.setText(_translate("TCS", "20: --- C"))
+        self.cb_lp21_top_2.setText(_translate("TCS", "21: --- C"))
         self.cb_lp13_top.setText(_translate("TCS", "13: --- C"))
         self.cb_lp1_top.setText(_translate("TCS", "1: --- C"))
         self.cb_lp11_top.setText(_translate("TCS", "11: --- C"))
         self.cb_lp9_top.setText(_translate("TCS", "9: --- C"))
         self.cb_lp7_top.setText(_translate("TCS", "7: --- C"))
-        self.cb_lp17_btm_2.setText(_translate("TCS", "17: --- C"))
+        self.cb_lp17_top.setText(_translate("TCS", "17: --- C"))
         self.cb_lp5_top.setText(_translate("TCS", "5: --- C"))
         self.cb_lp19_top.setText(_translate("TCS", "19: --- C"))
         self.cb_lp15_top.setText(_translate("TCS", "15: --- C"))
