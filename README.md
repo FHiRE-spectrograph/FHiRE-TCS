@@ -1,11 +1,12 @@
 # Temperature control system for FHiRE -- Updated 06/18/2020  
 
-*Scripts posted to GITHUB - __bold__ Important (Core) scripts.
+*Scripts posted to GITHUB  
+__bold__ Important (Core) scripts.  
 
 --------------------------------------------------------------------------------  
 ## Scripts on RPi #1:  
 
- *low-p-temp-boards.py : communicates with low precision temperature boards using SPI communications. 3 boards and uses heater relays 21-26.
+ *low-p-temp-boards.py : communicates with low precision temperature boards using SPI communications. 3 boards and uses heater relays 21-26.  
 __*low_p_temp_boards.py__: a more up to date version of low-p-temp-boards.py. Sets up LP board communication within a class to be accessed by TCS_GUI.py. Includes relay (21-26) and LP sensor communication methods.   
  Test2.py : testing UART communication between the two raspberry pis.  
  *relay.py : example of basic relay communication. Updated to be able to toggle relays on RPi1 and RPi2 from RPi1   
