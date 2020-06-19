@@ -57,13 +57,19 @@ class LP:
 			GPIO.setup(x,GPIO.OUT)
 			GPIO.output(x,GPIO.HIGH)
 
-		global read, write, reset
+		global read, write, reset, state, relay2
 
 		read = 0x40
 		write = 0x00
 		reset=[255,255,255,255,255,255,255,255] #0xFFFFFFFFFFFFFFFF
 
-		self.Setup(38); self.Setup(11); self.Setup(12) #Setup relay boards
+		state = {21:0,22:0,23:0,24:0,25:0,26:0} #Keep track whether relay is on/off (off=0)
+		relay2={21:[38,1],22:[38,2],23:[11,1],24:[11,2],25:[12,1],26:[12,2]}#Relay:[CS GPIO - board,pin]
+
+		#Setup relay boards
+		for x in GPIO_pins:
+			self.Setup(x)
+
 		print "Setup complete"
 
 	def Setup(self, board):
@@ -83,19 +89,20 @@ class LP:
 		#Write to ADC_CONTROL register: disable int. voltage, low-power, continuous conversion mode, int. clock source
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x01,8))
-		spi.writebytes(bytes(0x0,16)) 
+		spi.writebytes(bytes(0x0004,16)) 
 		GPIO.output(board,GPIO.HIGH)
 
 		#Write to CHANNEL_0 register: conversion=disabled, setup_0, AIN0=pos, AIN0=neg *Configuration might only work for relays*
 		GPIO.output(board,GPIO.LOW)
-		time.sleep(0.1)
 		spi.writebytes(bytes(write|0x09,8))
-		spi.writebytes(bytes(0x0,16))
-		time.sleep(0.1)
+		spi.writebytes(bytes(0x8033,16))
 		GPIO.output(board,GPIO.HIGH)
 
 	#board=CS GPIO pin -- toggle relay board 2 AIN2/P1
-	def Relay_ON(self, board, pin): 
+	def Relay_ON(self, ind): 
+
+		board = relay2[ind][0]
+		pin = relay2[ind][1]
 
 		if pin == 1:
 			P = 0x010000 #P1/AIN2 - IO_CONTROL_1
@@ -104,100 +111,129 @@ class LP:
 
 		#Write IO_Control_1 register: pin=low	
 		GPIO.output(board,GPIO.LOW)
-		time.sleep(0.1)
 		spi.writebytes(bytes(write|0x03,8)) 
-		time.sleep(0.1)
 		spi.writebytes(bytes(P,24)) 
-		time.sleep(0.1)
 		GPIO.output(board,GPIO.HIGH)
 
+		state[ind] = 1
+
 	#board=CS GPIO pin -- toggle relay board 2 AIN2/P1
-	def Relay_OFF(self, board, pin): 
+	def Relay_OFF(self, ind): 
+
+		board = relay2[ind][0]
+		pin = relay2[ind][1]
 
 		if pin == 1:
 			P = 0x110000 #P1/AIN2 - IO_CONTROL_1
 		elif pin == 2:
 			P = 0x220000 #P1/AIN3 - IO_CONTROL_1
 
-
 		#Read IO_Control_1 register: pin=high
 		GPIO.output(board,GPIO.LOW)
-		time.sleep(0.1)
 		spi.writebytes(bytes(write|0x03,8)) 
-		time.sleep(0.1)
 		spi.writebytes(bytes(P,24)) 
-		time.sleep(0.1)
 		GPIO.output(board,GPIO.HIGH)
+
+		state[ind] = 0
 
 	def getTemp(self, sensor):
 		sensor += 1
-		#sensor:[CS GPIO - board,AIN pin#] 29,28,27,61-56 = outside
-		s = {1:[38,0],2:[38,4],3:[38,],4:[38,],5:[38,],6:[38,],7:[38,],
-			8:[11,],9:[11,],10:[11,],11:[11,],12:[11,],13:[11,],14[11,],
-			15:[12,],16:[12,],17:[12,],18:[12,],19:[12,],20:[12,],21:[12,]
-			22:[13,],23:[13,],24:[13,],25:[13,],26:[13,],27:[13,],28:[13,],29:[13,],
-			30:[15,],31:[15,],32:[15,],33:[15,],34:[15,],35:[15,],36:[15,],37:[15,],
-			38:[16,],39:[16,],40:[16,],41:[16,],42:[16,],43:[16,],44:[16,],45:[16,],
-			46:[18,],47:[18,],48:[18,],49:[18,],50:[18,],51:[18,],52:[18,],53:[18,],
-			54:[22,],55:[22,],56:[22,],57:[22,],58:[22,],59:[22,],60:[22,],61:[22,]}
 
-		board = s[sensor][0]; pin = s[sensor][1]
+		#sensor:[CS GPIO - board,first AIN pin#] 29,28,27,61-56 = outside
+		s = {1:[38,0],2:[38,4],3:[38,6],4:[38,8],5:[38,10],6:[38,12],7:[38,14],
+			8:[11,0],9:[11,4],10:[11,6],11:[11,8],12:[11,10],13:[11,12],14:[11,14],
+			15:[12,0],16:[12,4],17:[12,6],18:[12,8],19:[12,10],20:[12,12],21:[12,14],
+			22:[13,0],23:[13,2],24:[13,4],25:[13,6],26:[13,8],27:[13,10],28:[13,12],29:[13,14],
+			30:[15,0],31:[15,2],32:[15,4],33:[15,6],34:[15,8],35:[15,10],36:[15,12],37:[15,14],
+			38:[16,0],39:[16,2],40:[16,4],41:[16,6],42:[16,8],43:[16,10],44:[16,12],45:[16,14],
+			46:[18,0],47:[18,2],48:[18,4],49:[18,6],50:[18,8],51:[18,10],52:[18,12],53:[18,14],
+			54:[22,0],55:[22,2],56:[22,4],57:[22,6],58:[22,8],59:[22,10],60:[22,12],61:[22,14]}
 
+		board = s[sensor][0]; pin1 = s[sensor][1]; pin2 = pin1 + 1
 
+		#Configuration for AIN pins for RTD sensors (even = excitation current, odd = volt. inp.)
+		conf = {0:0x0,1:0x20,2:0x2,3:0x60,4:0x4,5:0xA0,6:0x6,7:0xE0,8:0x8,
+			9:0x120,10:0xA,11:0x160,12:0xC,13:0x1A0,14:0xE,15:0x1E0}
 
+		Iout = conf[pin1]; Vin = conf[pin2]
 
-#board=CS GPIO pin -- Read sensor board 1 AIN0/AIN1
-def Sensor(board): 
+		Channel_enable = 0x8013|Vin
+		IO_control = 0x100|Iout #50 microA set on AIN pin2
 
-	#Write to CHANNEL_0 register: setup_0, AIN0=pos, DGND=neg
-	GPIO.output(board,GPIO.LOW)
-	spi.writebytes(bytes(write|0x09,8))
-	spi.writebytes(bytes(0x8013,16))
-	GPIO.output(board,GPIO.HIGH)
+		#Need a more robust way to check that relay is on. 
+		if board in [38,11,12]:
+			toggle = 0x0
+			for relay, status1 in state.items():
+				gp = relay2[relay][1] 
+				if status1 == 1: #keep general-purpose pin On
+					if gp == 1:
+						P = 0x010000
+					elif gp == 2:
+						P = 0x020000
+				elif status1 == 0: #keep general-purpose pin Off
+					if gp == 1:
+						P = 0x110000
+					elif gp == 2:
+						P = 0x220000
+					
+				toggle = toggle|P
 
-	#Write to ADC_CONTROL register: disable int. voltage, low-power, single-conversion mode, int. clock source
-	GPIO.output(board,GPIO.LOW)
-	time.sleep(0.1)
-	spi.writebytes(bytes(write|0x01,8))
-	time.sleep(0.1)
-	spi.writebytes(bytes(0x0000,16)) 
-	time.sleep(0.1)
-	GPIO.output(board,GPIO.HIGH)
+			#enable both P1 and P2, 50 microA set on AIN pin2, retain relay status
+			IO_control = 0x030100|Iout|toggle 
 
-	#Read ADC_CONTROL register: check that mode=standby
-	GPIO.output(board,GPIO.LOW)
-	spi.writebytes(bytes(read|0x01,8))
-	print "ADC_CONTROL Register: %s" %decimal(spi.readbytes(3))
-	GPIO.output(board,GPIO.HIGH)
-
-	#Write to IO_CONTROL_1 register: IOUT1=IOUT0=50microA, IOUT1=AIN1, IOUT2=AIN0
-	GPIO.output(board,GPIO.LOW)
-	spi.writebytes(bytes(write|0x03,8))
-	spi.writebytes(bytes(0x000910,24)) 
-	GPIO.output(board,GPIO.HIGH)
-
-	#Read Status register: check that DOUT/RDY is low for conversion
-	GPIO.output(board,GPIO.LOW)
-	spi.writebytes(bytes(read|0x00,8))
-	status=decimal(spi.readbytes(3))
-	print "Status Register: %s" %status
-	GPIO.output(board,GPIO.HIGH)
-
-	#If DOUT/RDY == low, then read conversion from the Data register:
-	if status >= 0x80:
+		#Reset to get reading from each board, but it slows the program.
 		GPIO.output(board,GPIO.LOW)
-		spi.writebytes(bytes(read|0x02,8))
-		data=decimal(spi.readbytes(3))
-		print "Data: %s" %data
+		spi.writebytes(reset)
+		time.sleep(1)
+		GPIO.output(board,GPIO.HIGH)
+	
+		#Write to Channel_0 register: Update positive AIN for sensor
+		GPIO.output(board,GPIO.LOW)
+		spi.writebytes(bytes(write|0x09,8))
+		spi.writebytes(bytes(Channel_enable,16))
 		GPIO.output(board,GPIO.HIGH)
 
-	#If you wanted to read more, then you'll have to reset the ADC_control next...
+		#Write IO_Control_1 register: Update Iout AIN output	
+		GPIO.output(board,GPIO.LOW)
+		spi.writebytes(bytes(write|0x03,8)) 
+		spi.writebytes(bytes(IO_control,24)) 
+		GPIO.output(board,GPIO.HIGH)	
 
-	#Read ADC_CONTROL register: check that mode=standby **Doesn't read 16bit value**
-	GPIO.output(board,GPIO.LOW)
-	spi.writebytes(bytes(read|0x01,8))
-	print "ADC_CONTROL Register: %s" %decimal(spi.readbytes(3))
-	GPIO.output(board,GPIO.HIGH)
+		#Write to ADC_CONTROL register: Update power mode to single conversion. 
+		GPIO.output(board,GPIO.LOW)
+		spi.writebytes(bytes(write|0x01,8))
+		spi.writebytes(bytes(0x0004,16)) 
+		GPIO.output(board,GPIO.HIGH)
+
+		#Read Status register: check that DOUT/RDY is low for conversion
+		GPIO.output(board,GPIO.LOW)
+		spi.writebytes(bytes(read|0x00,8))
+		status=decimal(spi.readbytes(1))
+		#print "Status Register: %s" %status
+		GPIO.output(board,GPIO.HIGH)
+
+		#Formulas and constants taken from HP sensor code. Likely not applicable to LP sensors.:
+		C0=-245.19
+		C1=5.5293
+		C2=-0.066046
+		C3=4.0422e-3
+		C4=-2.0697e-6
+		C5=-0.025422
+		C6=1.6883e-3
+		C7=-1.3601e-6
+
+		while True:
+			#If DOUT/RDY == low, then read conversion from the Data register:
+			if status >= 0x80:
+				GPIO.output(board,GPIO.LOW)
+				spi.writebytes(bytes(read|0x02,8))
+				data=decimal(spi.readbytes(3))
+				GPIO.output(board,GPIO.HIGH)	
+				R = ((2.3e-7*data)/0.00005)/2 # 50 microA excitation current, V might not be right? Also, not sure if it should be divided by 2. 
+				output=C0+(R*(C1+R*(C2+R*(C3+C4*R))))/(1+R*(C5+R*(C6+C7*R)))
+				return output
+				
+
 
 
 
