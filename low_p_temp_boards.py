@@ -42,6 +42,8 @@ def decimal(b):
 		decimal=b[1]+(b[0]<<8)
 	elif bitsize == 3: #24bit
 		decimal=b[2]+(b[1]<<8)+(b[0]<<16)
+	elif bitsize == 4:
+		decimal=b[3]+(b[2]<<8)+(b[1]<<16)+(b[0]<<32)
 
 	return decimal
 
@@ -98,94 +100,181 @@ class LP:
 		spi.writebytes(bytes(0x8033,16))
 		GPIO.output(board,GPIO.HIGH)
 
-	#board=CS GPIO pin -- toggle relay board 2 AIN2/P1
+	#board=CS GPIO pin -- toggle relay 
 	def Relay_ON(self, ind): 
 
 		board = relay2[ind][0]
 		pin = relay2[ind][1]
 
+		GPIO.output(board,GPIO.LOW)
+		spi.writebytes(bytes(read|0x03,8))
+		status1 = decimal(spi.readbytes(3))
+		GPIO.output(board,GPIO.HIGH)
+			
+		#Check status of P1:
+		if 0x110000 & status1 == 0x110000: #OFF
+			S = 0x110000
+		elif 0x010000 & status1 == 0x010000: #ON
+			S = 0x010000
+		else:
+			S = 0x0
+
+		#Check status of P2:
+		if 0x220000 & status1 == 0x220000: #OFF
+			Q = 0x220000
+		elif 0x020000 & status1 == 0x020000: #ON
+			Q = 0x020000
+		else:
+			Q = 0x0
+
 		if pin == 1:
 			P = 0x010000 #P1/AIN2 - IO_CONTROL_1
+			S = 0x0
 		elif pin == 2:
 			P = 0x020000 #P2/AIN3 - IO_CONTROL_1
+			Q = 0x0
 
 		#Write IO_Control_1 register: pin=low	
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x03,8)) 
-		spi.writebytes(bytes(P,24)) 
+		spi.writebytes(bytes(P|Q|S,24)) 
 		GPIO.output(board,GPIO.HIGH)
+
+		GPIO.output(board,GPIO.LOW)
+		spi.writebytes(bytes(read|0x03,8))
+		status1 = decimal(spi.readbytes(3))
+		GPIO.output(board,GPIO.HIGH)
+	
+		status1 = P|Q|S
+		
+		#Check status of P1:
+		if 0x110000 & status1 == 0x110000: #OFF
+			print 'P1 OFF'
+		elif 0x010000 & status1 == 0x010000: #ON
+			print 'P1 ON'
+
+		#Check status of P2:
+		if 0x220000 & status1 == 0x220000: #OFF
+			print 'P2 OFF'
+		elif 0x020000 & status1 == 0x020000: #ON
+			print 'P2 ON'
 
 		state[ind] = 1
 
-	#board=CS GPIO pin -- toggle relay board 2 AIN2/P1
 	def Relay_OFF(self, ind): 
 
 		board = relay2[ind][0]
 		pin = relay2[ind][1]
 
+		GPIO.output(board,GPIO.LOW)
+		spi.writebytes(bytes(read|0x03,8))
+		status1 = decimal(spi.readbytes(3))
+		GPIO.output(board,GPIO.HIGH)
+			
+		#Check status of P1:
+		if 0x110000 & status1 == 0x110000: #OFF
+			S = 0x110000
+		elif 0x010000 & status1 == 0x010000: #ON
+			S = 0x010000
+		else:
+			S = 0x0
+
+		#Check status of P2:
+		if 0x220000 & status1 == 0x220000: #OFF
+			Q = 0x220000
+		elif 0x020000 & status1 == 0x020000: #ON
+			Q = 0x020000
+		else:
+			Q = 0x0
+
 		if pin == 1:
 			P = 0x110000 #P1/AIN2 - IO_CONTROL_1
+			S = 0x0
 		elif pin == 2:
 			P = 0x220000 #P1/AIN3 - IO_CONTROL_1
+			Q = 0x0
 
 		#Read IO_Control_1 register: pin=high
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x03,8)) 
-		spi.writebytes(bytes(P,24)) 
+		spi.writebytes(bytes(P|Q|S,24)) 
 		GPIO.output(board,GPIO.HIGH)
+
+		GPIO.output(board,GPIO.LOW)
+		spi.writebytes(bytes(read|0x03,8))
+		status1 = decimal(spi.readbytes(3))
+		GPIO.output(board,GPIO.HIGH)
+
+		status1 = P|Q|S
+
+		#Check status of P1:
+		if 0x110000 & status1 == 0x110000: #OFF
+			print 'P1 OFF'
+		elif 0x010000 & status1 == 0x010000: #ON
+			print 'P1 ON'
+
+		#Check status of P2:
+		if 0x220000 & status1 == 0x220000: #OFF
+			print 'P2 OFF'
+		elif 0x020000 & status1 == 0x020000: #ON
+			print 'P2 ON'
 
 		state[ind] = 0
 
 	def getTemp(self, sensor):
 		sensor += 1
 
-		#sensor:[CS GPIO - board,first AIN pin#] 29,28,27,61-56 = outside
+		#sensor:[CS GPIO - board,first AIN pin#,resistance at room temp] 29,28,27,61-56 = outside
 		s = {1:[38,0],2:[38,4],3:[38,6],4:[38,8],5:[38,10],6:[38,12],7:[38,14],
 			8:[11,0],9:[11,4],10:[11,6],11:[11,8],12:[11,10],13:[11,12],14:[11,14],
 			15:[12,0],16:[12,4],17:[12,6],18:[12,8],19:[12,10],20:[12,12],21:[12,14],
-			22:[13,0],23:[13,2],24:[13,4],25:[13,6],26:[13,8],27:[13,10],28:[13,12],29:[13,14],
-			30:[15,0],31:[15,2],32:[15,4],33:[15,6],34:[15,8],35:[15,10],36:[15,12],37:[15,14],
-			38:[16,0],39:[16,2],40:[16,4],41:[16,6],42:[16,8],43:[16,10],44:[16,12],45:[16,14],
-			46:[18,0],47:[18,2],48:[18,4],49:[18,6],50:[18,8],51:[18,10],52:[18,12],53:[18,14],
-			54:[22,0],55:[22,2],56:[22,4],57:[22,6],58:[22,8],59:[22,10],60:[22,12],61:[22,14]}
+			22:[13,0,11500,'4-1'],23:[13,2,110,'4-2'],24:[13,4,10950,'4-3'],25:[13,6,110,'4-4'],26:[13,8,10950,'4-5'],27:[13,10],28:[13,12],29:[13,14],
+			30:[15,0,111,'5-1'],31:[15,2,10950,'5-2'],32:[15,4,110.5,'5-3'],33:[15,6,10950,'5-4'],34:[15,8,11000,'5-5'],35:[15,10,110.3,'5-6'],36:[15,12,11000,'5-7'],37:[15,14,110.3,'5-8'],
+			38:[16,0,11000,'6-1'],39:[16,2,110,'6-2'],40:[16,4,11500,'6-3'],41:[16,6,11000,'6-4'],42:[16,8,111.6,'6-5'],43:[16,10,11000,'6-6'],44:[16,12,111.5,'6-7'],45:[16,14,11000,'6-8'],
+			46:[18,0,109.9,'7-1'],47:[18,2,11000,'7-2'],48:[18,4,109.9,'7-3'],49:[18,6,11000,'7-4'],50:[18,8,109.8,'7-5'],51:[18,10,11500,'7-6'],52:[18,12,109.7,'7-7'],53:[18,14,110.15,'7-8'],
+			54:[22,0,11500,'8-1'],55:[22,2,109,'8-2'],56:[22,4],57:[22,6],58:[22,8],59:[22,10],60:[22,12],61:[22,14]}
+
+		diodes = [1,3,5,7,8,10,12,14,15,17,19,21,22,24,
+			26,31,33,34,36,38,40,41,43,45,47,49,51,54]
+		resistors = [2,4,6,9,11,13,16,18,20,23,25,30,
+			32,35,37,39,42,44,46,48,50,52,53,55]
 
 		board = s[sensor][0]; pin1 = s[sensor][1]; pin2 = pin1 + 1
 
 		#Configuration for AIN pins for RTD sensors (even = excitation current, odd = volt. inp.)
-		conf = {0:0x0,1:0x20,2:0x2,3:0x60,4:0x4,5:0xA0,6:0x6,7:0xE0,8:0x8,
-			9:0x120,10:0xA,11:0x160,12:0xC,13:0x1A0,14:0xE,15:0x1E0}
+		#conf = IOUT, conf2 = Vin
+		conf = {0:0x0,1:0x1,2:0x2,3:0x3,4:0x4,5:0x5,6:0x6,7:0x7,8:0x8,9:0x9,
+			10:0xA,11:0xB,12:0xC,13:0xD,14:0xE,15:0xF}
+		conf2 = {0:0x0,1:0x20,2:0x40,3:0x60,4:0x80,5:0xA0,6:0xC0,7:0xE0,8:0x100,
+			9:0x120,10:0x140,11:0x160,12:0x180,13:0x1A0,14:0x1C0,15:0x1E0}
 
-		Iout = conf[pin1]; Vin = conf[pin2]
+		Iout = conf[pin1]; Vin = conf2[pin2]
 
 		Channel_enable = 0x8013|Vin
 		IO_control = 0x100|Iout #50 microA set on AIN pin2
 
-		#Need a more robust way to check that relay is on. 
+		Rstatus=[] 
+		for x in [38,11,12]:
+			GPIO.output(x,GPIO.LOW)
+			spi.writebytes(bytes(read|0x03,8))
+			Rstatus.append(decimal(spi.readbytes(3)))
+			GPIO.output(x,GPIO.HIGH)
+
+		#Read Status register: check that DOUT/RDY is low for conversion
+		GPIO.output(board,GPIO.LOW)
+		spi.writebytes(bytes(read|0x00,8))
+		status=decimal(spi.readbytes(1))
+		GPIO.output(board,GPIO.HIGH)
+
+		#Does it even matter checking the excitation current for relays?
 		if board in [38,11,12]:
-			toggle = 0x0
-			for relay, status1 in state.items():
-				gp = relay2[relay][1] 
-				if status1 == 1: #keep general-purpose pin On
-					if gp == 1:
-						P = 0x010000
-					elif gp == 2:
-						P = 0x020000
-				elif status1 == 0: #keep general-purpose pin Off
-					if gp == 1:
-						P = 0x110000
-					elif gp == 2:
-						P = 0x220000
-					
-				toggle = toggle|P
+			GPIO.output(x,GPIO.LOW)
+			spi.writebytes(bytes(read|0x03,8))
+			toggle = decimal(spi.readbytes(3))
+			GPIO.output(x,GPIO.HIGH)
 
 			#enable both P1 and P2, 50 microA set on AIN pin2, retain relay status
 			IO_control = 0x030100|Iout|toggle 
-
-		#Reset to get reading from each board, but it slows the program.
-		GPIO.output(board,GPIO.LOW)
-		spi.writebytes(reset)
-		time.sleep(1)
-		GPIO.output(board,GPIO.HIGH)
 	
 		#Write to Channel_0 register: Update positive AIN for sensor
 		GPIO.output(board,GPIO.LOW)
@@ -196,7 +285,7 @@ class LP:
 		#Write IO_Control_1 register: Update Iout AIN output	
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x03,8)) 
-		spi.writebytes(bytes(IO_control,24)) 
+		spi.writebytes(bytes(IO_control,24))
 		GPIO.output(board,GPIO.HIGH)	
 
 		#Write to ADC_CONTROL register: Update power mode to single conversion. 
@@ -205,36 +294,65 @@ class LP:
 		spi.writebytes(bytes(0x0004,16)) 
 		GPIO.output(board,GPIO.HIGH)
 
-		#Read Status register: check that DOUT/RDY is low for conversion
-		GPIO.output(board,GPIO.LOW)
-		spi.writebytes(bytes(read|0x00,8))
-		status=decimal(spi.readbytes(1))
-		#print "Status Register: %s" %status
-		GPIO.output(board,GPIO.HIGH)
-
-		#Formulas and constants taken from HP sensor code. Likely not applicable to LP sensors.:
-		C0=-245.19
-		C1=5.5293
-		C2=-0.066046
-		C3=4.0422e-3
-		C4=-2.0697e-6
-		C5=-0.025422
-		C6=1.6883e-3
-		C7=-1.3601e-6
+		#Coef. resistors (Resistance)
+		r = [31.3231717,2.20213448,1.66482204e-3,-3.98620116e-6,4.74888650e-9,
+			7.27263261e-12,-2.80325700e-14,3.11300149e-17,-1.22123964e-20] 
+ 		#Coef. diodes (Voltage)
+		d = [2.06215201e4,-3.72240694e4,2.81733106e4,-1.78708069e4,9.20412215e3,
+			-3.73253855e3,1.12440290e3,-2.25464342e2,22.4784626]
 
 		while True:
+
+			#Read Status register: check that DOUT/RDY is low for conversion
+			GPIO.output(board,GPIO.LOW)
+			spi.writebytes(bytes(read|0x00,8))
+			status=decimal(spi.readbytes(1))
+			GPIO.output(board,GPIO.HIGH)
+
 			#If DOUT/RDY == low, then read conversion from the Data register:
-			if status >= 0x80:
+			if status < 0x80:
 				GPIO.output(board,GPIO.LOW)
 				spi.writebytes(bytes(read|0x02,8))
 				data=decimal(spi.readbytes(3))
 				GPIO.output(board,GPIO.HIGH)	
-				R = ((2.3e-7*data)/0.00005)/2 # 50 microA excitation current, V might not be right? Also, not sure if it should be divided by 2. 
-				output=C0+(R*(C1+R*(C2+R*(C3+C4*R))))/(1+R*(C5+R*(C6+C7*R)))
-				return output
+
+				#Read Status register: check that DOUT/RDY is low for conversion
+				GPIO.output(board,GPIO.LOW)
+				spi.writebytes(bytes(read|0x00,8))
+				status=decimal(spi.readbytes(1))
+				GPIO.output(board,GPIO.HIGH)
+
+				m = 1; b = 0
+				V = m*data+b
+				R = (V/50e-6)/2
+
+				polyR = np.polynomial.Chebyshev(r)
+				polyD = np.polynomial.Chebyshev(d)
+
+				if sensor in diodes:
+					V = data*3.3/(2**(24))
+					#V = V/(50e-6*s[sensor][2])
+	
+					if data > 16700000:
+						output = 11111
+						break
+
+					output = polyD(V)-273.15
+
+				elif sensor in resistors:
+					R = data*3.3/(2**(24)*50e-6)
+					R = 110*R/s[sensor][2]
+
+
+					if data > 16700000:
+						output = 11111
+						break				
+
+					output = polyR(R)-273.15
+				break
 				
+		return [output,Rstatus]
 
-
-
+	
 
 
