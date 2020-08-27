@@ -23,21 +23,16 @@ class TEMP:
 			i+=1
 
 	def getTemp(self,sensor):
-		C0=-245.19
-		C1=5.5293
-		C2=-0.066046
-		C3=4.0422e-3
-		C4=-2.0697e-6
-		C5=-0.025422
-		C6=1.6883e-3
-		C7=-1.3601e-6
+		r = [31.3231717,2.20213448,1.66482204e-3,-3.98620116e-6,4.74888650e-9,
+			7.27263261e-12,-2.80325700e-14,3.11300149e-17,-1.22123964e-20] 
+		polyR = np.polynomial.Chebyshev(r)
 
 		rdata=0x10
 		start=0x08
-		LSB = 2.3e-7
+		LSB = 2.3e-7 #1bit = 2.3e-7volts (not 2.441e-7? I don't think it matters for dT)
 		IDAC = .001  # 1000 micro amp excitation current
+		resistance = {0:1,1:1,2:100.447,3:100.490,4:100.353,5:100.355,6:100.497}
 
-		#Raw=[]
 		self.bus.write_byte(self.ADD[sensor],start)
 		time.sleep(0.1)
 		Data=self.bus.read_i2c_block_data(self.ADD[sensor],rdata)
@@ -46,12 +41,10 @@ class TEMP:
 		dec11s=Data[1]<<8
 		code=dec10s|dec11s|Data[2]
 
-		Vin = LSB*code
-		R = (Vin/IDAC)/2
+		Vin = LSB*code/2
+		R = Vin/IDAC
+		R = R*109.28/resistance[sensor] #conversion at ~23.8C
 
-		output=C0+(R*(C1+R*(C2+R*(C3+C4*R))))/(1+R*(C5+R*(C6+C7*R)))
+		output = polyR(R)-273.15
 		return output
-
-#temp = TEMP()
-#print temp.getTemp(0)
 
