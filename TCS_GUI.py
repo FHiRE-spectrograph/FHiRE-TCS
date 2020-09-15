@@ -30,7 +30,6 @@ lnk.sendline('python Desktop/FHiRE-TCS/relay_feed.py')
 #lnk.prompt()
 print('SSH set up with tcsP2. Relay_feed.py running.')
 
-
 def GPIO_setup(pin):
 	GPIO.setup(pin,GPIO.OUT)
 	GPIO.output(pin,GPIO.HIGH)
@@ -40,22 +39,6 @@ def blockPrint():
 	sys.stdout = open(os.devnull,'w')
 def enablePrint():
 	sys.stdout = sys.__stdout__
-
-#Update parameters according to the configuration file (option to change PID parameters w/out restarting script):
-def readConfig():
-	global targetT
-	with open ('/tmp/pid.conf','r') as f:
-		config=f.readline().split(',')
-		pid.SetPoint=float(config[0]) #capability to change target temp.
-		targetT=pid.SetPoint
-		pid.setKp=float(config[1])
-		pid.setKi=float(config[2])
-		pid.setKd=float(config[3])
-
-def createConfig():
-	if not os.path.isfile('/tmp/pid.conf'):
-		with open ('/tmp/pid.conf','w') as f:
-			f.write('%s,%s,%s,%s' %(targetT,P,I,D))
 
 hp = temp.TEMP() #TEMP class of HP sensors 
 lp = lowp.LP() #LP class for LP boards
@@ -104,7 +87,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 				pass #PWM setup in LPpwmThread
 
 	def PID_setup(self):
-		targetT = 26
+		targetT = 25
 		P = 10
 		I = 1
 		D = 1
@@ -114,6 +97,16 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			self.pid.append(PID.PID(P,I,D))
 			self.pid[x].SetPoint = targetT
 			self.pid[x].setSampleTime(1)
+
+	#Update PID parameters according to the configuration file (option to change PID parameters w/out restarting script):
+	def readConfig(self, ind):
+		config = np.loadtxt('pid.conf',unpack=True,skiprows=1,usecols=(0,1,2,3,4))
+		self.pid[ind].SetPoint = float(config[1,ind])
+		self.pid[ind].setKp = float(config[2,ind])
+		self.pid[ind].setKi = float(config[3,ind])
+		self.pid[ind].setKd = float(config[4,ind])
+		#print 'PID %s updated' %ind
+
 
 	def hp_update(self, data):
 		objects = {
@@ -244,10 +237,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 				ser.write(str(heat)+" "+str(control))
 				enablePrint()
 			elif heat <= 5 or heat == 7:
-				self.pwm[loop].ChangeDutyCycle(100-control)
+				if heat == 7:
+					heat = 6
+				self.pwm[heat-1].ChangeDutyCycle(100-control)
 			elif 21 <= heat <=26:
 				self.pwmthread[heat-21].signal.emit([heat,0.1,control])
 				#print 'LP PWM INITIATE! %s' %control
+
+			self.readConfig(loop)
 
 	def closeEvent(self,event):
 		reply = QtWidgets.QMessageBox.question(self,'Window Close', 'Are you sure you want to close the window?',
@@ -327,7 +324,7 @@ class LPpwmThread(QThread):
 		self.freq = freq
 		self.timeON = control/(100*freq)
 		self.timeOFF = (100-control)/(100*freq)
-		print 'PWM thread created: %s' %[sensor,freq,control]
+		#print 'PWM thread created: %s' %[sensor,freq,control]
 
 	def run(self):
 		while True:
@@ -339,7 +336,7 @@ class LPpwmThread(QThread):
 			if self.timeON > 0:
 				lp.Relay_ON(self.sensor)
 				elapsed = time.clock() - tic
-				print 'Relay %s ON: %s' %(self.sensor, self.timeON - elapsed)
+				#print 'Relay %s ON: %s' %(self.sensor, self.timeON - elapsed)
 				time.sleep(self.timeON - elapsed)
 	
 			tic = time.clock()
@@ -347,7 +344,7 @@ class LPpwmThread(QThread):
 			if self.timeOFF > 0:
 				lp.Relay_OFF(self.sensor)
 				elapsed = time.clock() - tic
-				print 'Relay %s OFF: %s' %(self.sensor, self.timeOFF - elapsed)
+				#print 'Relay %s OFF: %s' %(self.sensor, self.timeOFF - elapsed)
 				time.sleep(self.timeOFF - elapsed)
 
 	def stop(self):
