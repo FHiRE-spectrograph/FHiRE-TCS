@@ -68,10 +68,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 	def __init__(self, *args, **kwargs):
 		super(MainWindow, self).__init__(*args, **kwargs)
 		self.setupUi(self)
-		#QtGui.QMainWindow.__init__(self)
-		#uic.loadUi('tcs.ui',self)
-
-		#self.btnExit.clicked
 		
 		self.hpthread = HPSensorThread()
 		self.hpthread.start()
@@ -81,52 +77,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		self.lpthread.start()
 		self.lpthread.signal.connect(self.lp_update)
 
+		self.pwmthread = []
+		for x in range(6):
+			self.pwmthread.append(LPpwmThread(x+21,0.1,0))
+			self.pwmthread[x].start()
+
 		self.cb_hp2.setText("off")
 		self.cb_hp7.setText("off")
 		self.cb_hp10.setText("off")
-
-		heater=[self.pb_h1,self.pb_h2,self.pb_h3,self.pb_h4,
-			self.pb_h5,self.pb_h6,self.pb_h7,self.pb_h8,
-			self.pb_h9,self.pb_h10,self.pb_h11,self.pb_h12,
-			self.pb_h13,self.pb_h14,self.pb_h15,self.pb_h16,
-			self.pb_h1_top,self.pb_h2_top,self.pb_h3_top,
-			self.pb_h4_top,self.pb_h5_top,self.pb_h6_top,
-			self.pb_h7_top,self.pb_h8_top,self.pb_h9_top,
-			self.pb_h10_top,self.pb_h11_top,self.pb_h12_top]
-
-		for h in heater:
-			h.setCheckable(True)
-			h.setStyleSheet("QPushButton:checked {background-color: #ADFF2F}")
-
-		self.pb_h1.clicked.connect(lambda:self.relay(self.pb_h1,1))
-		self.pb_h2.clicked.connect(lambda:self.relay(self.pb_h2,2))
-		self.pb_h3.clicked.connect(lambda:self.relay(self.pb_h3,3))
-		self.pb_h4.clicked.connect(lambda:self.relay(self.pb_h4,4))
-		self.pb_h5.clicked.connect(lambda:self.relay(self.pb_h5,5))
-		self.pb_h6.clicked.connect(lambda:self.relay(self.pb_h6,6))
-		self.pb_h7.clicked.connect(lambda:self.relay(self.pb_h7,7))
-		self.pb_h8.clicked.connect(lambda:self.relay(self.pb_h8,8))
-		self.pb_h9.clicked.connect(lambda:self.relay(self.pb_h9,9))
-		self.pb_h10.clicked.connect(lambda:self.relay(self.pb_h10,10))
-		self.pb_h11.clicked.connect(lambda:self.relay(self.pb_h11,11))
-		self.pb_h12.clicked.connect(lambda:self.relay(self.pb_h12,12))
-		self.pb_h13.clicked.connect(lambda:self.relay(self.pb_h13,13))
-		self.pb_h14.clicked.connect(lambda:self.relay(self.pb_h14,14))
-		self.pb_h15.clicked.connect(lambda:self.relay(self.pb_h15,15))
-		self.pb_h16.clicked.connect(lambda:self.relay(self.pb_h16,16))
-
-		self.pb_h1_top.clicked.connect(lambda:self.relay(self.pb_h1_top,17))
-		self.pb_h2_top.clicked.connect(lambda:self.relay(self.pb_h2_top,18))
-		self.pb_h3_top.clicked.connect(lambda:self.relay(self.pb_h3_top,19))
-		self.pb_h4_top.clicked.connect(lambda:self.relay(self.pb_h4_top,20))
-		self.pb_h5_top.clicked.connect(lambda:self.relay(self.pb_h5_top,21))
-		self.pb_h6_top.clicked.connect(lambda:self.relay(self.pb_h6_top,22))
-		self.pb_h7_top.clicked.connect(lambda:self.relay(self.pb_h7_top,23))
-		self.pb_h8_top.clicked.connect(lambda:self.relay(self.pb_h8_top,24))
-		self.pb_h9_top.clicked.connect(lambda:self.relay(self.pb_h9_top,25))
-		self.pb_h10_top.clicked.connect(lambda:self.relay(self.pb_h10_top,26))
-		self.pb_h11_top.clicked.connect(lambda:self.relay(self.pb_h11_top,27))
-		self.pb_h12_top.clicked.connect(lambda:self.relay(self.pb_h12_top,28))
 
 		self.PWM_setup()
 		self.PID_setup()
@@ -136,17 +94,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		for x in range(28):
 			x +=1
 			if x <= 5 or x == 7:
-				self.pwm.append(GPIO.PWM(relay[x],0.5))
+				self.pwm.append(GPIO.PWM(relay[x],0.1)) #update every 10 sec
 				if x == 7:
 					x = 6
 				self.pwm[x-1].start(100)
 			elif 8 <= x <= 20 or x in [6,27,28]:
 				pass #PWM setup in relay_feed.py
 			elif 21 <= x <= 26:
-				print 'Work in progress XP' 
+				pass #PWM setup in LPpwmThread
 
 	def PID_setup(self):
-		targetT = 32
+		targetT = 26
 		P = 10
 		I = 1
 		D = 1
@@ -156,55 +114,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			self.pid.append(PID.PID(P,I,D))
 			self.pid[x].SetPoint = targetT
 			self.pid[x].setSampleTime(1)
-
-	'''
-	def relay(self, btn, ind):
-		if ind < 16:
-			ind1="btm: "+str(ind)
-		elif ind >= 16:
-			ind1="top: "+str(ind-16)
-
-		if btn.isChecked():
-			if ind <= 6:
-				GPIO.output(relay[ind],GPIO.LOW)
-			elif 7 <= ind <= 20 or ind == 27 or ind == 28:
-				blockPrint()
-				ser.write(str(ind).strip('\r\n'))
-				enablePrint()
-			elif 21 <= ind <= 26:	
-				lp.Relay_ON(ind)
-
-			print "Relay "+ind1+" ON"
-		else:
-			if ind <= 6:
-				GPIO.output(relay[ind],GPIO.HIGH)
-			elif 7 <= ind <= 20 or ind == 27 or ind == 28:
-				blockPrint()
-				ser.write(str(ind*100).strip('\r\n'))
-				enablePrint()
-			elif 21 <= ind <= 26:	
-				lp.Relay_OFF(ind)
-	
-			print "Relay "+ind1+" OFF"
-
-	def relay_off(self, ind):
-		if ind < 16:
-			ind1="btm: "+str(ind)
-		elif ind >= 16:
-			ind1="top: "+str(ind-16)
-
-
-		if ind <= 6:
-			GPIO.output(relay[ind],GPIO.HIGH)
-		elif 7 <= ind <= 20 or ind == 27 or ind == 28:
-			blockPrint()
-			ser.write(str(ind*100).strip('\r\n'))
-			enablePrint()
-		elif 21 <= ind <= 26:	
-			lp.Relay_OFF(ind)
-	
-		print "Relay "+ind1+" OFF"
-	'''
 
 	def hp_update(self, data):
 		objects = {
@@ -225,7 +134,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			objects[data[0]].setText(pre+": %.2f C" %data[1])
 
 	def lp_update(self, data):
-		Rstatus = data[2]
+		#Rstatus = data[2]
 		data = data[0:2]
 
 		objects = {
@@ -310,6 +219,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			23:self.lb_h11,24:self.lb_h12,25:self.lb_h13,26:self.lb_h14,27:self.lb_h15,
 			28:self.lb_h16}
 
+		
 		#if data[0] in objects.keys() and objects[data[0]].isChecked() == True:
 		if data[0] in objects.keys():
 			pre = objects[data[0]].text()
@@ -320,6 +230,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			else:
 				objects[data[0]].setText(pre+": %.2f C" %data[1])
 
+		
 		if data[0] in LPHeating.keys():
 			loop = LPHeating[data[0]][1]
 			heat = LPHeating[data[0]][0]
@@ -334,35 +245,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 				enablePrint()
 			elif heat <= 5 or heat == 7:
 				self.pwm[loop].ChangeDutyCycle(100-control)
-			print loop
-			
-			
-		'''
-		relay = {0:[self.pb_h5_top,self.pb_h6_top],1:[self.pb_h7_top,self.pb_h8_top],
-			2:[self.pb_h9_top,self.pb_h10_top]}
-		
-		#Update relay status if not turned on/off manually 
-		ind = -1
-		for x in Rstatus:
-			ind += 1
-			
-			#print x
-			if 0x330000 & x == 0x330000: #both off
-				relay[ind][0].setChecked(False)
-				relay[ind][1].setChecked(False)
-
-			elif 0x230000 & x == 0x230000: #P1 on/P2 off
-				relay[ind][0].setChecked(True)
-				relay[ind][1].setChecked(False)
-
-			elif 0x130000 & x == 0x130000: #P1 off/P2 on
-				relay[ind][0].setChecked(False)
-				relay[ind][1].setChecked(True)
-			
-			else: #both on
-				relay[ind][0].setChecked(True)
-				relay[ind][1].setChecked(True)
-		'''
+			elif 21 <= heat <=26:
+				self.pwmthread[heat-21].signal.emit([heat,0.1,control])
+				#print 'LP PWM INITIATE! %s' %control
 
 	def closeEvent(self,event):
 		reply = QtWidgets.QMessageBox.question(self,'Window Close', 'Are you sure you want to close the window?',
@@ -377,7 +262,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 					blockPrint()
 					ser.write('1111 1')
 					enablePrint()
-				#self.relay_off(x)
+				elif 21 <= x <= 26:
+					self.pwmthread[x-21].stop()
 			GPIO.cleanup()
 			event.accept()
 			print 'Window Closed'
@@ -411,8 +297,6 @@ class LPSensorThread(QThread):
 		for s in range(61): #9 LP outside (sensor#27-29,56-61)
 			if s in [26,27,28,55,56,57,58,59,60]:
 				pass
-			elif 0 <= s <= 20:
-				pass
 			else:
 				lpboard = lp.getTemp(s)
 				time.sleep(0.01)
@@ -421,34 +305,62 @@ class LPSensorThread(QThread):
 			for s in range(61): #9 LP outside (sensor#27-29,56-61)
 				if s in [26,27,28,55,56,57,58,59,60]:
 					pass
-				elif 0 <= s <= 20:
-					pass
 				else:
-					lptemp = []
+					lptemp = []		
 					for x in range(10):
 						lpboard = lp.getTemp(s)
-						lptemp.append(lpboard[0])
+						lptemp.append(lpboard)
 						time.sleep(0.01)
-					Rstatus = lpboard[1]
 					lptemp = np.average(lptemp)
-					print 'Sensor %s: %.5s' %(s,lptemp)
-					self.signal.emit([s,lptemp,Rstatus])
-					time.sleep(0.5)	
+					#print 'Sensor %s: %.5s' %(s,lptemp)
+					self.signal.emit([s,lptemp])
+					time.sleep(0.1)	
 	def stop(self):
 		self.terminate()
 
-'''
-class RelayThread(QThread):
+class LPpwmThread(QThread):
 	signal = pyqtSignal('PyQt_PyObject')
-
-	def __init__(self):
+	
+	def __init__(self,sensor,freq,control):
 		QThread.__init__(self)
+		self.sensor = sensor
+		self.freq = freq
+		self.timeON = control/(100*freq)
+		self.timeOFF = (100-control)/(100*freq)
+		print 'PWM thread created: %s' %[sensor,freq,control]
 
 	def run(self):
 		while True:
-			Rstatus = lp.getTemp(s)[1]
-'''
-					
+			tic = time.clock()
+
+			self.signal.connect(self.update)
+			time.sleep(0.1)
+
+			if self.timeON > 0:
+				lp.Relay_ON(self.sensor)
+				elapsed = time.clock() - tic
+				print 'Relay %s ON: %s' %(self.sensor, self.timeON - elapsed)
+				time.sleep(self.timeON - elapsed)
+	
+			tic = time.clock()
+
+			if self.timeOFF > 0:
+				lp.Relay_OFF(self.sensor)
+				elapsed = time.clock() - tic
+				print 'Relay %s OFF: %s' %(self.sensor, self.timeOFF - elapsed)
+				time.sleep(self.timeOFF - elapsed)
+
+	def stop(self):
+		lp.Relay_OFF(self.sensor)
+		self.terminate()
+
+	def update(self,data):
+		self.sensor = data[0]
+		self.freq = data[1]
+		control = data[2]
+		self.timeON = control/(100*self.freq)
+		self.timeOFF = (100-control)/(100*self.freq)
+		time.sleep(0.1)				
 
 #PID loop will operate automatically and toggle relays. For now, just have the functionallity to manually toggle relays?
 def main():
