@@ -3,16 +3,11 @@ import time, math
 import spidev
 import RPi.GPIO as GPIO
 
-# intialize SPI communication ---------------------------------------
+# intialize SPI communication 
 spi = spidev.SpiDev()
 spi.open(0,0)
 spi.mode = 3
 spi.no_cs=False #set false or true? false = manually control spi devices cs. error. Doesn't seem to do anything.
-
-#Initialize GPIO pins on RPI1 ---------------------------------------
-# GPIO pins are used for SPI chip select pins. Chip select pins are held high between communication
-# brought low when sending commands and go high again when transaction is complete. CS is held low through 
-# duration of a read transaction and brought high when read is complete.
 
 #Convert decimal/hex to a byte array
 def bytes(decimal,bitsize):
@@ -22,14 +17,12 @@ def bytes(decimal,bitsize):
 	elif bitsize == 16:
 		y=math.floor(decimal*2**(-8))
 		x=decimal-y*2**8
-		#return [int(x),int(y)]
 		return [int(y),int(x)]
 	elif bitsize == 24:
 		z=math.floor(decimal*2**(-16))
 		d2=decimal-z*2**16
 		y=math.floor(d2*2**(-8))
 		x=d2-y*2**8
-		#return [int(x),int(y),int(z)]
 		return [int(z),int(y),int(x)]
 
 
@@ -63,10 +56,9 @@ class LP:
 
 		read = 0x40
 		write = 0x00
-		reset=[255,255,255,255,255,255,255,255] #0xFFFFFFFFFFFFFFFF
 
-		state = {21:0,22:0,23:0,24:0,25:0,26:0} #Keep track whether relay is on/off (off=0)
-		relay2={21:[38,1],22:[38,2],23:[11,1],24:[11,2],25:[12,1],26:[12,2]}#Relay:[CS GPIO - board,pin]
+		#Relay:[CS GPIO - board,pin]
+		relay2={21:[38,1],22:[38,2],23:[11,1],24:[11,2],25:[12,1],26:[12,2]}
 
 		#Setup relay boards
 		for x in GPIO_pins:
@@ -94,74 +86,55 @@ class LP:
 		spi.writebytes(bytes(0x0004,16)) 
 		GPIO.output(board,GPIO.HIGH)
 
-		#Write to CHANNEL_0 register: conversion=disabled, setup_0, AIN0=pos, AIN0=neg *Configuration might only work for relays*
+		#Write to CHANNEL_0 register: conversion=disabled, setup_0, AIN0=pos, AIN0=neg
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x09,8))
 		spi.writebytes(bytes(0x8033,16))
 		GPIO.output(board,GPIO.HIGH)
 
+#########################################################
+# Relay Toggle Methods
+#########################################################
+
 	#board=CS GPIO pin -- toggle relay 
 	def Relay_ON(self, ind): 
-		
 		board = relay2[ind][0]
 		pin = relay2[ind][1]
-
-		GPIO.output(board,GPIO.LOW)
-		spi.writebytes(bytes(read|0x03,8))
-		status1 = decimal(spi.readbytes(3))
-		GPIO.output(board,GPIO.HIGH)
 
 		if pin == 1:
 			P = 0x010000 #P1/AIN2 - IO_CONTROL_1
-			S = 0x0
-			Q = 0x0
 		elif pin == 2:
 			P = 0x020000 #P2/AIN3 - IO_CONTROL_1
-			Q = 0x0
-			S = 0x0
 
-		print P|Q|S
 		#Write IO_Control_1 register: pin=low	
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x03,8)) 
-		spi.writebytes(bytes(P|Q|S,24)) 
+		spi.writebytes(bytes(P,24)) 
 		GPIO.output(board,GPIO.HIGH)
-		
-		print '%s ON' %ind
 
 	def Relay_OFF(self, ind): 
-		
 		board = relay2[ind][0]
 		pin = relay2[ind][1]
 
-		GPIO.output(board,GPIO.LOW)
-		spi.writebytes(bytes(read|0x03,8))
-		status1 = decimal(spi.readbytes(3))
-		GPIO.output(board,GPIO.HIGH)
-
 		if pin == 1:
 			P = 0x110000 #P1/AIN2 - IO_CONTROL_1
-			S = 0x0
-			Q = 0x0
 		elif pin == 2:
 			P = 0x220000 #P2/AIN3 - IO_CONTROL_1
-			Q = 0x0
-			S = 0x0
 
-		print P|Q|S
 		#Read IO_Control_1 register: pin=high
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x03,8)) 
-		spi.writebytes(bytes(P|Q|S,24)) 
+		spi.writebytes(bytes(P,24)) 
 		GPIO.output(board,GPIO.HIGH)
 
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(read|0x03,8))
 		status1 = decimal(spi.readbytes(3))
 		GPIO.output(board,GPIO.HIGH)
-		
 
-		print '%s OFF' %ind
+###########################################################
+# Read Temperature Method
+###########################################################
 
 	def getTemp(self, sensor):
 		sensor += 1
@@ -182,7 +155,6 @@ class LP:
 			32,35,37,39,42,44,46,48,50,52,53,55]
 
 		board = s[sensor][0]; pin1 = s[sensor][1]; pin2 = pin1 + 1
-
 
 		#conf = IOUT, conf2 = Vin
 		conf = {0:0x0,1:0x1,2:0x2,3:0x3,4:0x4,5:0x5,6:0x6,7:0x7,8:0x8,9:0x9,
@@ -207,12 +179,13 @@ class LP:
 		spi.writebytes(bytes(IO_control,24))
 		GPIO.output(board,GPIO.HIGH)	
 
-		#Write to ADC_CONTROL register: Update power mode to single conversion. 
+		#Write to ADC_CONTROL register: Update power mode to single conversion - begins conversion 
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x01,8))
 		spi.writebytes(bytes(0x0004,16)) 
 		GPIO.output(board,GPIO.HIGH)
 
+		#Coefficients for Chebyshev polynomials - convert resistance/voltage to temp.
 		#Coef. resistors (Resistance)
 		r = [31.3231717,2.20213448,1.66482204e-3,-3.98620116e-6,4.74888650e-9,
 			7.27263261e-12,-2.80325700e-14,3.11300149e-17,-1.22123964e-20] 
@@ -221,7 +194,6 @@ class LP:
 			-3.73253855e3,1.12440290e3,-2.25464342e2,22.4784626]
 
 		while True:
-
 			#Read Status register: check that DOUT/RDY is low for conversion
 			GPIO.output(board,GPIO.LOW)
 			spi.writebytes(bytes(read|0x00,8))
@@ -239,11 +211,11 @@ class LP:
 				polyD = np.polynomial.Chebyshev(d)
 
 				if sensor in diodes:
-					V = data*3.3/(2**(24))
+					V = data*3.3/(2**(24)) #24bits to voltage w/ 3.3V reference
 
-					if sensor <= 21:
+					if sensor <= 21: #Bottom shield sensors
 						V = V*0.5653/s[sensor][2] #conversion at ~24.4C
-					else:
+					else: #Top shield sensors
 						V = V*0.57/s[sensor][2]	#conversion at ~22.3C
 
 					if data > 16700000:
@@ -253,15 +225,12 @@ class LP:
 					output = polyD(V)-273.15
 
 				elif sensor in resistors:
-					R = data*3.3/(2**(24)*50e-6)
+					R = data*3.3/(2**(24)*50e-6) #24bits to resistance w/ 3.3V reference and 50microA excitation current
 
-					if sensor <= 21:
+					if sensor <= 21: 
 						R = R*109.5/s[sensor][2] #conversion at ~24.4C
 					else:
 						R = 108.96*R/s[sensor][2] #conversion at ~23C
-
-
-					R = 108.96*R/s[sensor][2]
 
 					if data > 16700000:
 						output = 11111
@@ -272,5 +241,3 @@ class LP:
 				
 		return output
 	
-
-
