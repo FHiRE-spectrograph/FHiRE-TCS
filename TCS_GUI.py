@@ -9,6 +9,10 @@ from pexpect import pxssh
 import numpy as np
 import PID
 
+############################################################
+# Setup
+############################################################
+
 ser=serial.Serial(port='/dev/serial0',baudrate=115200,bytesize=serial.EIGHTBITS,timeout=0)
 
 #Relay:GPIO pin
@@ -18,6 +22,7 @@ relay={1:29,2:31,3:32,4:33,5:36,6:37,7:38,8:11,9:12,10:13,11:15,12:16,13:18,14:2
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BOARD)
 
+#Setup communication with RPi2 in order to have access to its relays
 lnk = pxssh.pxssh()
 hn = '10.212.212.70'
 us = 'fhire'
@@ -27,23 +32,26 @@ lnk.sendline('python Desktop/FHiRE-TCS/relay_feed.py')
 #lnk.prompt()
 print('SSH set up with tcsP2. Relay_feed.py running.')
 
-def GPIO_setup(pin):
-	GPIO.setup(pin,GPIO.OUT)
-	GPIO.output(pin,GPIO.HIGH)
-	print "%s pin setup" %pin
-
+#Used to remove byte messages during UART comm.
 def blockPrint():
 	sys.stdout = open(os.devnull,'w')
 def enablePrint():
 	sys.stdout = sys.__stdout__
 
-hp = temp.TEMP() #TEMP class of HP sensors 
-lp = lowp.LP() #LP class for LP boards
+hp = temp.TEMP() #TEMP class for reading HP sensors 
+lp = lowp.LP() #LP class for reading LP boards
+
+#Setup relays on RPi1
+def GPIO_setup(pin):
+	GPIO.setup(pin,GPIO.OUT)
+	GPIO.output(pin,GPIO.HIGH)
+	print "%s pin setup" %pin
 
 for key, value in relay.items():
 	if key <= 6:
 		GPIO_setup(value)		
 
+#Main PyQt5 window
 class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 	def __init__(self, *args, **kwargs):
 		super(MainWindow, self).__init__(*args, **kwargs)
@@ -63,6 +71,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			self.pwmthread.append(LPpwmThread(x+21,0.1,0))
 			self.pwmthread[x].start()
 
+		#Show HP sensors 2,7,10 as off
 		self.cb_hp2.setText("off")
 		self.cb_hp7.setText("off")
 		self.cb_hp10.setText("off")
@@ -70,29 +79,31 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		self.PWM_setup()
 		self.PID_setup()
 
+#########################################################################
+# PWM and PID Loop Methods
+#########################################################################
+
+	#Setup PWM controls for relays (mainly RPi1 relays)
 	def PWM_setup(self):
 		self.pwm = []
 		for x in range(28):
 			x +=1
 			if x <= 5 or x == 7:
-				self.pwm.append(GPIO.PWM(relay[x],0.1)) #update every 10 sec
+				self.pwm.append(GPIO.PWM(relay[x],0.1)) #cycle every 10 sec
 				if x == 7:
 					x = 6
 				self.pwm[x-1].start(100)
 			elif 8 <= x <= 20 or x in [6,27,28]:
-				pass #PWM setup in relay_feed.py
+				pass #PWM setup in relay_feed.py on RPi2
 			elif 21 <= x <= 26:
 				pass #PWM setup in LPpwmThread
 
+	#Setup PID loops for each heating pad
 	def PID_setup(self):
-		targetT = 25
-		P = 10
-		I = 1
-		D = 1
-
 		self.pid = []
 		for x in range(28):
-			self.pid.append(PID.PID(P,I,D))
+			self.pid.append(PID.PID())
+			self.readConfig(x) 
 			self.pid[x].SetPoint = targetT
 			self.pid[x].setSampleTime(1)
 
@@ -105,12 +116,18 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		self.pid[ind].setKd = float(config[4,ind])
 		#print 'PID %s updated' %ind
 
+	#Updates countdown between sensor updates
 	def timer_update(self, time):
 		try:
 			self.timer.setText('%.2f %%\n' %time[1] +time[0])
 		except:
 			self.timer.setText(time)
 
+#######################################################################
+# HP and LP Temperature Methods
+#######################################################################
+
+	#Update HP sensor values
 	def hp_update(self, data):
 		objects = {
 			0: self.cb_hp1,
@@ -129,6 +146,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			time.sleep(0.01)
 			objects[data[0]].setText(pre+": %.2f C" %data[1])
 
+	#Update LP sensor values
 	def lp_update(self, data):
 		data = data[0:3]
 		std = data[2]
@@ -201,6 +219,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			#60: }
 
 		#LP diodes matched with heating pads and PID loops
+		#Sensor:[heating pad,PID loop]
 		LPHeating = {0:[3,0],2:[6,1],4:[9,2],6:[12,3],7:[2,4],9:[5,5],11:[8,6],
 			13:[11,7],14:[1,8],16:[4,9],18:[7,10],20:[10,11],21:[14,12],
 			23:[17,13],25:[20,14],30:[23,15],32:[26,16],33:[15,17],35:[18,18],
@@ -215,6 +234,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			23:self.lb_h11,24:self.lb_h12,25:self.lb_h13,26:self.lb_h14,27:self.lb_h15,
 			28:self.lb_h16}
 
+		#Update labels with current temperature and stdev
 		if data[0] in objects.keys():
 			pre = objects[data[0]].text()
 			pre = pre.split(':')[0]
@@ -224,6 +244,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			else:
 				objects[data[0]].setText(pre+": %.2f C \n+-%.2f" %(data[1],std))
 		
+		#Calculate and update duty cycle for heating pad using diode reading 
 		if data[0] in LPHeating.keys():
 			loop = LPHeating[data[0]][1]
 			heat = LPHeating[data[0]][0]
@@ -232,20 +253,21 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			control = max(min(int(control),100),0)
 			relay[heat].setText(str(control)+chr(37))
 
-			if 8 <= heat <= 20 or heat in [6,27,28]:
+			if 8 <= heat <= 20 or heat in [6,27,28]: #RPi2
 				blockPrint()
 				ser.write(str(heat)+" "+str(control))
 				enablePrint()
-			elif heat <= 5 or heat == 7:
+			elif heat <= 5 or heat == 7: #RPi1
 				if heat == 7:
 					heat = 6
 				self.pwm[heat-1].ChangeDutyCycle(100-control)
-			elif 21 <= heat <=26:
+			elif 21 <= heat <=26: #LP boards
 				self.pwmthread[heat-21].signal.emit([heat,0.1,control])
 				#print 'LP PWM INITIATE! %s' %control
 
-			self.readConfig(loop)
+			self.readConfig(loop) #Update PID coefficients and target temp
 
+	#Terminates all QThreads, toggles all relays off, and cleans up GPIO pins
 	def closeEvent(self,event):
 		reply = QtWidgets.QMessageBox.question(self,'Window Close', 'Are you sure you want to close the window?',
 			QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
@@ -266,9 +288,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			print 'Window Closed'
 		else:
 			event.ignore()
-		
-			
 
+################################################################################
+#  QThread Classes
+################################################################################
+			
+#QThread for reading HP sensor temperatures from TEMP.py
+#*Need to implement averaging sequence for HP sensors too*
 class HPSensorThread(QThread):
 	signal = pyqtSignal('PyQt_PyObject')
 
@@ -284,6 +310,7 @@ class HPSensorThread(QThread):
 	def stop(self):
 		self.terminate()
 
+#QThread for reading LP sensor temperatures from low_p_temp_boards.py
 class LPSensorThread(QThread):
 	signal = pyqtSignal('PyQt_PyObject')
 	signal2 = pyqtSignal('PyQt_PyObject')
@@ -292,7 +319,8 @@ class LPSensorThread(QThread):
 		QThread.__init__(self)
 
 	def run(self):
-		for s in range(61): #9 LP outside (sensor#27-29,56-61)
+		#Runs through sensors once - sensors tend to return unreasonable values first run
+		for s in range(61): #9 LP outside (sensor#27-29,56-61) (not wired yet)
 			if s in [26,27,28,55,56,57,58,59,60]:
 				pass
 			else:
@@ -303,15 +331,18 @@ class LPSensorThread(QThread):
 			lptemp = []
 			tic = time.clock()
 			elapsed = 0; i = 0
-			total = 20 #total time in seconds
+			total = 20 #total time in seconds between temp/duty cycle updates
+
 			while elapsed < total:
 				elapsed = time.clock() - tic
+				#update countdown label
 				if elapsed < total:
 					statement = '%.2f/%.2f sec' %(elapsed,total)
 					percent = elapsed/total*100
 					self.signal2.emit([statement,percent])
 				else:
 					self.signal2.emit("Updating")
+
 				averaging = []
 				for s in range(61): #9 LP outside (sensor#27-29,56-61)
 					if s in [26,27,28,55,56,57,58,59,60]:
@@ -319,6 +350,7 @@ class LPSensorThread(QThread):
 					else:
 						lpboard = lp.getTemp(s)
 
+						#Attempt at removing unreasonable readings
 						if lpboard >= 30 or lpboard <= 15:
 							lpboard = lp.getTemp(s)
 
@@ -341,10 +373,10 @@ class LPSensorThread(QThread):
 				else:
 					self.signal.emit([s,lptemp[s],lpstd[s]])
 					
-
 	def stop(self):
 		self.terminate()
 
+#QThread of method to emulate PWM for relays on LP boards
 class LPpwmThread(QThread):
 	signal = pyqtSignal('PyQt_PyObject')
 	
@@ -381,6 +413,7 @@ class LPpwmThread(QThread):
 		lp.Relay_OFF(self.sensor)
 		self.terminate()
 
+	#Update timeON and timeOFF based on new duty cycles
 	def update(self,data):
 		self.sensor = data[0]
 		self.freq = data[1]
@@ -389,7 +422,6 @@ class LPpwmThread(QThread):
 		self.timeOFF = (100-control)/(100*self.freq)
 		time.sleep(0.1)				
 
-#PID loop will operate automatically and toggle relays. For now, just have the functionallity to manually toggle relays?
 def main():
 	app = QtWidgets.QApplication(sys.argv)
 	window = MainWindow()
