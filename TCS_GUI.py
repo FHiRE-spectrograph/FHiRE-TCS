@@ -1,6 +1,3 @@
-#from PyQt5.QtWidgets import *
-#from PyQt5.QtCore import *
-#from PyQt5.QtGui import *
 import sys, serial, os, time
 import RPi.GPIO as GPIO
 from PyQt5 import QtWidgets, uic
@@ -59,6 +56,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		self.lpthread = LPSensorThread()
 		self.lpthread.start()
 		self.lpthread.signal.connect(self.lp_update)
+		self.lpthread.signal2.connect(self.timer_update)
 
 		self.pwmthread = []
 		for x in range(6):
@@ -107,6 +105,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		self.pid[ind].setKd = float(config[4,ind])
 		#print 'PID %s updated' %ind
 
+	def timer_update(self, time):
+		try:
+			self.timer.setText('%.2f %%\n' %time[1] +time[0])
+		except:
+			self.timer.setText(time)
 
 	def hp_update(self, data):
 		objects = {
@@ -127,8 +130,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			objects[data[0]].setText(pre+": %.2f C" %data[1])
 
 	def lp_update(self, data):
-		#Rstatus = data[2]
-		data = data[0:2]
+		data = data[0:3]
+		std = data[2]
 
 		objects = {
 			0: self.cb_lp1_top,
@@ -212,8 +215,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			23:self.lb_h11,24:self.lb_h12,25:self.lb_h13,26:self.lb_h14,27:self.lb_h15,
 			28:self.lb_h16}
 
-		
-		#if data[0] in objects.keys() and objects[data[0]].isChecked() == True:
 		if data[0] in objects.keys():
 			pre = objects[data[0]].text()
 			pre = pre.split(':')[0]
@@ -221,8 +222,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			if data[1] == 11111:
 				objects[data[0]].setText("N/C")
 			else:
-				objects[data[0]].setText(pre+": %.2f C" %data[1])
-
+				objects[data[0]].setText(pre+": %.2f C \n+-%.2f" %(data[1],std))
 		
 		if data[0] in LPHeating.keys():
 			loop = LPHeating[data[0]][1]
@@ -286,6 +286,7 @@ class HPSensorThread(QThread):
 
 class LPSensorThread(QThread):
 	signal = pyqtSignal('PyQt_PyObject')
+	signal2 = pyqtSignal('PyQt_PyObject')
 
 	def __init__(self):
 		QThread.__init__(self)
@@ -299,19 +300,48 @@ class LPSensorThread(QThread):
 				time.sleep(0.01)
 
 		while True:
-			for s in range(61): #9 LP outside (sensor#27-29,56-61)
+			lptemp = []
+			tic = time.clock()
+			elapsed = 0; i = 0
+			total = 20 #total time in seconds
+			while elapsed < total:
+				elapsed = time.clock() - tic
+				if elapsed < total:
+					statement = '%.2f/%.2f sec' %(elapsed,total)
+					percent = elapsed/total*100
+					self.signal2.emit([statement,percent])
+				else:
+					self.signal2.emit("Updating")
+				averaging = []
+				for s in range(61): #9 LP outside (sensor#27-29,56-61)
+					if s in [26,27,28,55,56,57,58,59,60]:
+						averaging.append(0)
+					else:
+						lpboard = lp.getTemp(s)
+
+						if lpboard >= 30 or lpboard <= 15:
+							lpboard = lp.getTemp(s)
+
+						averaging.append(lpboard)
+						#time.sleep(0.01)
+
+				if i == 0:
+					lptemp = averaging
+					i += 1
+				else:
+					lptemp = np.vstack((lptemp,averaging))
+				time.sleep(0.01)
+
+			lpstd = np.std(lptemp,axis=0)
+			lptemp = np.average(lptemp,axis=0)
+	
+			for s in range(61):
 				if s in [26,27,28,55,56,57,58,59,60]:
 					pass
 				else:
-					lptemp = []		
-					for x in range(10):
-						lpboard = lp.getTemp(s)
-						lptemp.append(lpboard)
-						time.sleep(0.01)
-					lptemp = np.average(lptemp)
-					#print 'Sensor %s: %.5s' %(s,lptemp)
-					self.signal.emit([s,lptemp])
-					time.sleep(0.1)	
+					self.signal.emit([s,lptemp[s],lpstd[s]])
+					
+
 	def stop(self):
 		self.terminate()
 
