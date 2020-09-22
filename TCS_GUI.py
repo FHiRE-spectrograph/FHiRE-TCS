@@ -1,6 +1,6 @@
-import sys, serial, os, time
+import sys, serial, os, time, datetime, pytz
 import RPi.GPIO as GPIO
-from PyQt5 import QtWidgets, uic
+from PyQt5 import QtWidgets, uic, QtCore
 from PyQt5.QtCore import QThread, pyqtSignal
 from tcs import Ui_TCS
 import TEMP as temp #HP sensor routine
@@ -8,6 +8,12 @@ import low_p_temp_boards as lowp
 from pexpect import pxssh
 import numpy as np
 import PID
+
+import matplotlib
+matplotlib.use('QT5Agg')
+import matplotlib.pylab as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
 ############################################################
 # Setup
@@ -60,6 +66,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		self.hpthread = HPSensorThread()
 		self.hpthread.start()
 		self.hpthread.signal.connect(self.hp_update)
+		self.hpthread.signal2.connect(self.timer_update)
 
 		self.lpthread = LPSensorThread()
 		self.lpthread.start()
@@ -79,6 +86,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		self.PWM_setup()
 		self.PID_setup()
 
+		self.pb_graph.pressed.connect(self.graph)
+		self.lay = QtWidgets.QVBoxLayout(self.graphWidget)
+		self.lay.setContentsMargins(0,0,0,0)
+
 #########################################################################
 # PWM and PID Loop Methods
 #########################################################################
@@ -89,9 +100,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		for x in range(28):
 			x +=1
 			if x <= 5 or x == 7:
-				self.pwm.append(GPIO.PWM(relay[x],0.1)) #cycle every 10 sec
 				if x == 7:
 					x = 6
+				self.pwm.append(GPIO.PWM(relay[x],0.1)) #cycle every 10 sec
 				self.pwm[x-1].start(100)
 			elif 8 <= x <= 20 or x in [6,27,28]:
 				pass #PWM setup in relay_feed.py on RPi2
@@ -104,7 +115,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		for x in range(28):
 			self.pid.append(PID.PID())
 			self.readConfig(x) 
-			self.pid[x].SetPoint = targetT
+			#self.pid[x].SetPoint = targetT
 			self.pid[x].setSampleTime(1)
 
 	#Update PID parameters according to the configuration file (option to change PID parameters w/out restarting script):
@@ -127,6 +138,93 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 # HP and LP Temperature Methods
 #######################################################################
 
+	#Graph temperatures for given HP sensors for range specified by initial and final times
+	#Sensors format: 1 3 4
+	#Time format: Y-m-d H:M:S
+	#Graph all measurements by keeping initial and final times unspecified
+	def graph(self):
+		c = np.loadtxt("tempLog.dat",unpack=True,skiprows=1,usecols=(0,1,2,3,4,5,6,7))
+		try:
+			utc = c[0,:]
+		except:
+			print "Not enough values recorded (>1)."
+
+		self.sensors = self.ln_sensor.text()
+		self.time_initial = self.ln_to.text()
+		self.time_final = self.ln_tf.text()
+
+		if not self.time_initial and not self.time_final:
+			index1 = 0; index2 = None
+
+		if self.sensors:
+			s = self.sensors.split()
+			for x in range(len(s)):
+				s[x] = int(s[x])
+			column = {1:1,3:2,4:3,5:4,6:5,8:6,9:7} #HPsensor:column
+			col = []
+			try:
+				for x in s:
+					col.append(column.get(x))
+			except:
+				print "Improper sensor number."
+		else:
+			print "Please enter a sensor number."
+			return			
+	
+		if self.time_initial:
+			#Convert given date & time to local epoch seconds
+			to = self.time_initial.split()
+			date1 = to[0].split("-")
+			time1 = to[1].split(":")
+			for x in range(len(date1)):
+				date1[x] = int(date1[x])
+			for x in range(len(time1)):
+				time1[x] = int(time1[x])
+			try:
+				utc1 = datetime.datetime(date1[0],date1[1],date1[2],time1[0],time1[1],time1[2]).strftime("%s") #local time 
+			except:
+				print "Improper initial time."
+			utc1 = float(utc1)
+
+			
+			#Find closest time in tempLog.dat and get index
+			index1 = min(range(len(utc)), key=lambda i: abs(utc[i]-utc1))
+
+		if self.time_final:
+			tf = self.time_final.split()
+			date2 = tf[0].split("-")
+			time2 = tf[1].split(":")
+			for x in range(len(date2)):
+				date2[x] = int(date2[x])
+			for x in range(len(time2)):
+				time2[x] = int(time2[x])
+			try:
+				utc2 = datetime.datetime(date2[0],date2[1],date2[2],time2[0],time2[1],time2[2]).strftime("%s") #local time 
+			except:
+				print "Improper final time."
+			utc2 = float(utc2)
+
+			index2 = min(range(len(utc)), key=lambda i: abs(utc[i]-utc2))
+
+		#Graph
+		if 'plotWidget' in dir(self):
+			self.lay.removeWidget(self.plotWidget)
+
+		x = utc[index1:index2]
+		self.fig, self.ax1 = plt.subplots()
+		for i in range(len(col)):
+			y =  c[col[i],index1:index2]
+			self.ax1.plot(x,y,label="HP%s"%s[i])
+		self.ax1.set_xlabel("Time"); self.ax1.set_ylabel("Temperature [C]")
+		self.ax1.legend(loc="upper left")
+		self.plotWidget = FigureCanvas(self.fig)
+		self.lay.addWidget(self.plotWidget)
+
+		if 'test' not in globals():
+			global test
+			test = self.addToolBar(QtCore.Qt.TopToolBarArea,NavigationToolbar(self.plotWidget,self))
+
+
 	#Update HP sensor values
 	def hp_update(self, data):
 		objects = {
@@ -144,7 +242,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			pre = objects[data[0]].text()
 			pre = pre.split(':')[0]
 			time.sleep(0.01)
-			objects[data[0]].setText(pre+": %.2f C" %data[1])
+			objects[data[0]].setText(pre+": %.2f C \n+-%.2f" %(data[1],data[2]))
 
 	#Update LP sensor values
 	def lp_update(self, data):
@@ -297,16 +395,60 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 #*Need to implement averaging sequence for HP sensors too*
 class HPSensorThread(QThread):
 	signal = pyqtSignal('PyQt_PyObject')
+	signal2 = pyqtSignal('PyQt_PyObject')
 
 	def __init__(self):
 		QThread.__init__(self)
+		self.j = 0
 	
 	def run(self):
 		while True:
+			hptemp = []
+			tic = time.clock()
+			elapsed = 0; i = 0
+			total = 2 #total time in seconds between temp/duty cycle updates
+
+			while elapsed < total:
+				elapsed = time.clock() - tic
+				#update countdown label
+				if elapsed < total:
+					statement = '%.2f/%.2f sec' %(elapsed,total)
+					percent = elapsed/total*100
+					self.signal2.emit([statement,percent])
+				else:
+					self.signal2.emit("Updating")
+
+				averaging = []
+				for s in range(7): 
+					hpboard = hp.getTemp(s)
+					#hpboard = 5
+					averaging.append(hpboard)
+
+				if i == 0:
+					hptemp = averaging
+					i += 1
+				else:
+					hptemp = np.vstack((hptemp,averaging))
+				time.sleep(0.01)
+
+			hpstd = np.std(hptemp,axis=0)
+			hptemp = np.average(hptemp,axis=0)
+
+			with open('tempLog.dat','a') as tempLog:
+				current_time = datetime.datetime.now().strftime("%s") #local time
+				if self.j == 0:
+					tempLog.seek(0,1)
+					tempLog.truncate(37)
+					self.j += 1
+					tempLog.write('%s		' %current_time)
+				else:
+					tempLog.write('\n%s		'%current_time)
+				for item in hptemp:
+					tempLog.write("%s	" %item)
+
 			for s in range(7):
-				hptemp = hp.getTemp(s)
-				self.signal.emit([s,hptemp])
-				time.sleep(1)
+				self.signal.emit([s,hptemp[s],hpstd[s]])
+
 	def stop(self):
 		self.terminate()
 
