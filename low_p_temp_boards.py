@@ -95,6 +95,28 @@ class LP:
 #########################################################
 # Relay Toggle Methods
 #########################################################
+	def check_status(self,board,pin):
+		GPIO.output(board,GPIO.LOW)
+		spi.writebytes(bytes(read|0x03,8))
+		status = decimal(spi.readbytes(3))
+		GPIO.output(board,GPIO.HIGH)
+
+		if pin == 1: #Check if pin 2 is ON/OFF
+			if status & 0x220000 == 0x220000: #OFF
+				#print('P2 kept OFF')
+				return 0x220000
+			elif status & 0x020000 == 0x020000: #ON
+				#print('P2 kept ON')
+				return 0x020000
+
+		elif pin == 2: #Check if pin 1 is ON/OFF
+			if status & 0x110000 == 0x110000: #OFF
+				#print('P1 kept OFF')
+				return 0x110000
+			elif status & 0x010000 == 0x010000: #ON
+				#print('P1 kept ON')
+				return 0x010000
+		return 0x0
 
 	#board=CS GPIO pin -- toggle relay 
 	def Relay_ON(self, ind): 
@@ -102,14 +124,18 @@ class LP:
 		pin = relay2[ind][1]
 
 		if pin == 1:
+			#print('P1 turning ON')
 			P = 0x010000 #P1/AIN2 - IO_CONTROL_1
 		elif pin == 2:
+			#print('P2 turning ON')
 			P = 0x020000 #P2/AIN3 - IO_CONTROL_1
+		
+		S = self.check_status(board,pin)
 
 		#Write IO_Control_1 register: pin=low	
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x03,8)) 
-		spi.writebytes(bytes(P,24)) 
+		spi.writebytes(bytes(P|S,24)) 
 		GPIO.output(board,GPIO.HIGH)
 
 	def Relay_OFF(self, ind): 
@@ -117,20 +143,20 @@ class LP:
 		pin = relay2[ind][1]
 
 		if pin == 1:
+			#print('P1 turning OFF')
 			P = 0x110000 #P1/AIN2 - IO_CONTROL_1
 		elif pin == 2:
+			#print('P2 turning OFF')
 			P = 0x220000 #P2/AIN3 - IO_CONTROL_1
+
+		S = self.check_status(board,pin)
 
 		#Read IO_Control_1 register: pin=high
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x03,8)) 
-		spi.writebytes(bytes(P,24)) 
+		spi.writebytes(bytes(P|S,24)) 
 		GPIO.output(board,GPIO.HIGH)
 
-		GPIO.output(board,GPIO.LOW)
-		spi.writebytes(bytes(read|0x03,8))
-		status1 = decimal(spi.readbytes(3))
-		GPIO.output(board,GPIO.HIGH)
 
 ###########################################################
 # Read Temperature Method
@@ -140,19 +166,24 @@ class LP:
 		sensor += 1
 
 		#sensor:[CS GPIO - board,first AIN pin#,resistance at room temp] 29,28,27,61-56 = outside
-		s = {1:[38,0,0.56675,'1-1'],2:[38,4,107.23,'1-2'],3:[38,6,0.56623,'1-3'],4:[38,8,107.15,'1-4'],5:[38,10,107.45,'1-5'],6:[38,12,107.6,'1-6'],7:[38,14,0.54185,'1-7'],
-			8:[11,0,0.56713,'2-1'],9:[11,4,108.18,'2-2'],10:[11,6,0.54146,'2-3'],11:[11,8,108.5,'2-4'],12:[11,10,0.56776,'2-5'],13:[11,12,108.3,'2-6'],14:[11,14,0.54187,'2-7'],
-			15:[12,0,0.54211,'3-1'],16:[12,4,110.01,'3-2'],17:[12,6,0.566278,'3-3'],18:[12,8,110.4,'3-4'],19:[12,10,0.54306,'3-5'],20:[12,12,110.3,'3-6'],21:[12,14,0.56845,'3-7'],
-			22:[13,0,0.574,'4-1'],23:[13,2,110.03,'4-2'],24:[13,4,0.5486,'4-3'],25:[13,6,110.03,'4-4'],26:[13,8,0.548,'4-5'],27:[13,10],28:[13,12],29:[13,14],
-			30:[15,0,111.0,'5-1'],31:[15,2,0.5486,'5-2'],32:[15,4,110.32,'5-3'],33:[15,6,0.5486,'5-4'],34:[15,8,0.5497,'5-5'],35:[15,10,110.1,'5-6'],36:[15,12,0.549,'5-7'],37:[15,14,110.2,'5-8'],
-			38:[16,0,0.5491,'6-1'],39:[16,2,1111,'6-2'],40:[16,4,0.5755,'6-3'],41:[16,6,0.5490,'6-4'],42:[16,8,111.3,'6-5'],43:[16,10,0.5492,'6-6'],44:[16,12,111.2,'6-7'],45:[16,14,0.5497,'6-8'],
-			46:[18,0,109.9,'7-1'],47:[18,2,0.5482,'7-2'],48:[18,4,109.72,'7-3'],49:[18,6,0.5480,'7-4'],50:[18,8,109.6,'7-5'],51:[18,10,0.5736,'7-6'],52:[18,12,109.8,'7-7'],53:[18,14,110.2,'7-8'],
-			54:[22,0,0.5746,'8-1'],55:[22,2,108.98,'8-2'],56:[22,4],57:[22,6],58:[22,8],59:[22,10],60:[22,12],61:[22,14]}
+		s = {1:[38,0,0.5668,'1-1'],2:[38,4,41.4,'1-2'],3:[38,6,0.5662,'1-3'],4:[38,8,0.5431,'1-4'],5:[38,10,107.58,'1-5'],6:[38,12,0.5431,'1-6'],7:[38,14,0.5433,'1-7'],
+			8:[11,0,0.5679,'2-1'],9:[11,4,109.2,'2-2'],10:[11,6,0.5436,'2-3'],11:[11,8,109.2,'2-4'],12:[11,10,0.552,'2-5'],13:[11,12,109.4,'2-6'],14:[11,14,0.5447,'2-7'],
+			15:[12,0,0.5443,'3-1'],16:[12,4,109.98,'3-2'],17:[12,6,0.5666,'3-3'],18:[12,8,110.4,'3-4'],19:[12,10,0.5447,'3-5'],20:[12,12,110.0,'3-6'],21:[12,14,0.5684,'3-7'],
+			22:[13,0,0.5681,'4-1'],23:[13,2,110.85,'4-2'],24:[13,4,0.5439,'4-3'],25:[13,6,110.84,'4-4'],26:[13,8,0.5435,'4-5'],27:[13,10],28:[13,12],29:[13,14],
+			30:[15,0,111.5,'5-1'],31:[15,2,0.5438,'5-2'],32:[15,4,113.65,'5-3'],33:[15,6,0.5438,'5-4'],34:[15,8,0.5446,'5-5'],35:[15,10,114.7,'5-6'],36:[15,12,0.5441,'5-7'],37:[15,14,113.5,'5-8'],
+			38:[16,0,0.5441,'6-1'],39:[16,2,116.2,'6-2'],40:[16,4,0.5689,'6-3'],41:[16,6,0.5442,'6-4'],42:[16,8,113.8,'6-5'],43:[16,10,0.5444,'6-6'],44:[16,12,114.5,'6-7'],45:[16,14,0.5451,'6-8'],
+			46:[18,0,112.3,'7-1'],47:[18,2,0.5435,'7-2'],48:[18,4,113.3,'7-3'],49:[18,6,0.5433,'7-4'],50:[18,8,112.3,'7-5'],51:[18,10,0.5675,'7-6'],52:[18,12,112.3,'7-7'],53:[18,14,110.7,'7-8'],
+			54:[22,0,0.5686,'8-1'],55:[22,2,109.68,'8-2'],56:[22,4,1,'8-3'],57:[22,6,0.565,'8-4'],58:[22,8,110,'8-5'],59:[22,10,110,'8-6'],60:[22,12,110,'8-7'],61:[22,14,1,'8-8']}
 
-		diodes = [1,3,7,8,10,12,14,15,17,19,21,22,24,
-			26,31,33,34,36,38,40,41,43,45,47,49,51,54]
-		resistors = [2,4,5,6,9,11,13,16,18,20,23,25,30,
-			32,35,37,39,42,44,46,48,50,52,53,55]
+		#diodes = [1,3,5,7,8,10,12,14,15,17,19,21,22,24,
+		#	26,31,33,34,36,38,40,41,43,45,47,49,51,54]
+		#resistors = [2,4,6,9,11,13,16,18,20,23,25,30,
+		#	32,35,37,39,42,44,46,48,50,52,53,55]
+
+		diodes = [1,3,4,6,7,8,10,12,14,15,17,19,21,22,24,
+			26,31,33,34,36,38,40,41,43,45,47,49,51,54,57]
+		resistors = [2,5,9,11,13,16,18,20,23,25,30,
+			32,35,37,39,42,44,46,48,50,52,53,55,58,59,60]
 
 		board = s[sensor][0]; pin1 = s[sensor][1]; pin2 = pin1 + 1
 
@@ -166,12 +197,30 @@ class LP:
 
 		Channel_enable = 0x8013|Vin
 		IO_control = 0x100|Iout #50 microA set on AIN pin2
+
+		#print("board = %s, sensor = %s" %(board,sensor))
+		#print(hex(Channel_enable))
 	
 		#Write to Channel_0 register: Update positive AIN for sensor
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x09,8))
 		spi.writebytes(bytes(Channel_enable,16))
 		GPIO.output(board,GPIO.HIGH)
+
+		#if board == 38:
+		#	channel = [0x09,0xA,0xB,0xC,0xD,0xE,0xF,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18]
+		#	for x in channel:
+		#		GPIO.output(board,GPIO.LOW)
+		#		spi.writebytes(bytes(read|x,8))
+		#		ch_check = decimal(spi.readbytes(3))
+		#		GPIO.output(board,GPIO.HIGH)
+		#		print(hex(ch_check))
+		#		if ch_check != 0x0001:
+		#			print("Channel_%s is enabled. Disabling." %(channel.index(x)+1))
+		#			GPIO.output(board,GPIO.LOW)
+		#			spi.writebytes(bytes(write|x,8))
+		#			spi.writebytes(bytes(0x0001,16))
+		#			GPIO.output(board,GPIO.HIGH)		
 
 		#Write IO_Control_1 register: Update Iout AIN output	
 		GPIO.output(board,GPIO.LOW)
@@ -192,19 +241,44 @@ class LP:
  		#Coef. diodes (Voltage)
 		d = [2.06215201e4,-3.72240694e4,2.81733106e4,-1.78708069e4,9.20412215e3,
 			-3.73253855e3,1.12440290e3,-2.25464342e2,22.4784626]
+		#print("here: %s" %sensor)
 
 		while True:
 			#Read Status register: check that DOUT/RDY is low for conversion
 			GPIO.output(board,GPIO.LOW)
 			spi.writebytes(bytes(read|0x00,8))
-			status=decimal(spi.readbytes(1))
+			status = decimal(spi.readbytes(1))
 			GPIO.output(board,GPIO.HIGH)
+			#print(hex(status))
+			time.sleep(0.01)
+
+			#print(hex(status))
+			#if board == 11:
+			#	print(hex(status))
+
+			if status == 0x40:
+				print("LP ADC error - check error register")
+				GPIO.output(board,GPIO.LOW)
+				spi.writebytes(bytes(read|0x06,24))
+				error = decimal(spi.readbytes(3))
+				GPIO.output(board,GPIO.HIGH)
+				print("Error register: %s" %hex(error))
+				#time.sleep(0.01)
+
+				output = 11111
+				break
+			elif status == 0x3:
+				print("Sensor %s - wrong channel error" %sensor)
+				output = 11111
+				break
 
 			#If DOUT/RDY == low, then read conversion from the Data register:
+			#if 0x0 <= status and 0x0F >= status:
 			if status == 0x0:
+				#print("reading")
 				GPIO.output(board,GPIO.LOW)
 				spi.writebytes(bytes(read|0x02,8))
-				data=decimal(spi.readbytes(3))
+				data = decimal(spi.readbytes(3))
 				GPIO.output(board,GPIO.HIGH)	
 
 				polyR = np.polynomial.Chebyshev(r)
@@ -212,32 +286,56 @@ class LP:
 
 				if sensor in diodes:
 					V = data*3.3/(2**(24)) #24bits to voltage w/ 3.3V reference
+					#print(data)
+					#print(V)
+					#output = V
 
-					if sensor <= 21: #Bottom shield sensors
-						V = V*0.5653/s[sensor][2] #conversion at ~24.4C
-					else: #Top shield sensors
-						V = V*0.57/s[sensor][2]	#conversion at ~22.3C
+					V = V*0.5647/s[sensor][2]
+					#if sensor <= 21: #Bottom shield sensors
+					#	V = V*0.5653/s[sensor][2] #conversion at ~24.4C
+					#else: #Top shield sensors
+					#	V = V*0.57/s[sensor][2]	#conversion at ~22.3C
 
 					if data > 16700000:
+						#print("Sensor %s - N/C" %sensor)
 						output = 11111
 						break
 
 					output = polyD(V)-273.15
+					#output = V
 
 				elif sensor in resistors:
 					R = data*3.3/(2**(24)*50e-6) #24bits to resistance w/ 3.3V reference and 50microA excitation current
+					V = data*3.3/(2**(24))
+					#print(data)					
+					#print(R)
+					#print(R*50e-6)
 
-					if sensor <= 21: 
-						R = R*109.5/s[sensor][2] #conversion at ~24.4C
-					else:
-						R = 108.96*R/s[sensor][2] #conversion at ~23C
+					R = R*109.605/s[sensor][2]
+					#if sensor <= 21: 
+					#	R = R*109.5/s[sensor][2] #conversion at ~24.4C
+					#else:
+					#	R = 108.96*R/s[sensor][2] #conversion at ~23C
 
 					if data > 16700000:
+						#print("Sensor %s - N/C" %sensor)
 						output = 11111
-						break				
-
+						break	
+			
 					output = polyR(R)-273.15
+					#output = R
 				break
-				
+
+			#elif 0x0 < status and 0x0F >= status:
+			#	print("Sensor %s converting from wrong channel. Passing." %s[sensor][0])
+			#	output = 11111
+			#	break
+
+				#if board == 11:
+				#	print(output)
+					#output = R
+				#output = data
+		#output = data
+		#print(output)
 		return output
 	
