@@ -1,4 +1,4 @@
-# Temperature control system for FHiRE -- Updated 09/16/2020  
+# Temperature control system for FHiRE -- Updated 11/10/2020  
 
 *Scripts posted to GITHUB  
 __bold__ Important (Core) scripts.  
@@ -9,18 +9,18 @@ __bold__ Important (Core) scripts.
  *low-p-temp-boards.py : communicates with low precision temperature boards using SPI communications. 3 boards and uses heater relays 21-26.  
 __*low_p_temp_boards.py__: a more up to date version of low-p-temp-boards.py. Sets up LP board communication within a class to be accessed by TCS_GUI.py. Includes relay (21-26) and LP sensor communication methods.   
  Test2.py : testing UART communication between the two raspberry pis.  
- *relay.py : example of basic relay communication. Updated to be able to toggle relays on RPi1 and RPi2 from RPi1   
+ relay.py : example of basic relay communication. Updated to be able to toggle relays on RPi1 and RPi2 from RPi1   
  temp_sensor.py : communicates with and querries temperature. Writes temperaure to other raspberry pi using serial communication. Paired with temp_feed.py. [replaced temp2.py]  
 __*tcs.py__ : layout of temperature control front end (GUI). GUI version used for characterization (derived from tcs.ui)  
  PID_final.py : empty  
-__*TCS_GUI.py__ : Temperature control system interface script using PyQt5. Monitors HP and LP sensors by deriving methods from TEMP.py and low_p_temp_boards.py scripts respectively. Continuously collects sensor readings into an array which is averaged after a set time span. The averaged reading (and stdev) is displayed within the GUI and LP diode readings are used to calculate the duty cycle of their respective heating pads via individual PID loops (might need to be changed to LP resistors running the duty cycles). Target temperature and PID coefficients for individual PID loops can be updated via pid.conf without restarting the GUI script. Each heating pad (AKA relay) operates off of individual PWM controls. Graphic widget is not yet implemented.  
+__*TCS_GUI.py__ : Temperature control system interface script using PyQt5. Monitors HP and LP sensors by deriving methods from TEMP.py and low_p_temp_boards.py scripts respectively. Continuously collects sensor readings into an array which is averaged after a set time span. The averaged readings are saved to individual dat files for HP and LP sensors. The duty cycle of each heating pads' PWM is calculated via individual PID loops. Each PID loop provides an updated duty cycle based on the most recent average temperature readings of the LP sensors which surround each heating pad. Target temperature and PID coefficients for individual PID loops can be updated via pid.conf without restarting the GUI script. The GUI also includes a graphing option to track the temperature readings and RMS of HP sensors, LP sensors, and PID averages.  
 __*PID.py__ : Downloaded python PID controller. Functions used in other scripts.   
 __*TEMP.py__ : basic function for measuring temperature of a single high precision sensor.  
-pid.conf : example PID configuration file which can be used to update the target temp and PID coefficients of individual PID loops without restarting TCS_GUI.py.  
+*pid.conf : example PID configuration file which can be used to update the target temp and PID coefficients of individual PID loops without restarting TCS_GUI.py.  
 
 ### Copies:  
- PID_single.py : Current working version  
- PID_multiple.py  
+ PID_single.py : Current working version - trash  
+ PID_multiple.py : trash   
 
 --------------------------------------------------------------------------------
 ## Scripts on RPi #2:  
@@ -39,10 +39,10 @@ __*relay_feed.py__ : UART script to toggle relays on RPi2 from RPi1 via relay.py
 [x]Be able to turn on/off each of the 26 relays from one RPi.  
 [x]Set up communication with low precision boards -- how do you read temperature?  
 [x]Use accurate formulas to convert LP sensor voltages to temperature (resistors and diodes)  
-[?]Double check chebyshev coefficients (LP resistors show high fluctuations over time.)  
+[-]Double check chebyshev coefficients (LP resistors show high fluctuations over time.)  
 [x]Add averaging sequence for sensor readings.  
 [x]Integrate PWM and PID loop methods to GUI.  
-[]Add option to view temperatures of toggled sensors (not a priority).  
+[x]Add option to view temperatures of toggled sensors (not a priority).  
 
 
 
