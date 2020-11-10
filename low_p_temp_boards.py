@@ -175,11 +175,6 @@ class LP:
 			46:[18,0,112.3,'7-1'],47:[18,2,0.5435,'7-2'],48:[18,4,113.3,'7-3'],49:[18,6,0.5433,'7-4'],50:[18,8,112.3,'7-5'],51:[18,10,0.5675,'7-6'],52:[18,12,112.3,'7-7'],53:[18,14,110.7,'7-8'],
 			54:[22,0,0.5686,'8-1'],55:[22,2,109.68,'8-2'],56:[22,4,1,'8-3'],57:[22,6,0.565,'8-4'],58:[22,8,110,'8-5'],59:[22,10,110,'8-6'],60:[22,12,110,'8-7'],61:[22,14,1,'8-8']}
 
-		#diodes = [1,3,5,7,8,10,12,14,15,17,19,21,22,24,
-		#	26,31,33,34,36,38,40,41,43,45,47,49,51,54]
-		#resistors = [2,4,6,9,11,13,16,18,20,23,25,30,
-		#	32,35,37,39,42,44,46,48,50,52,53,55]
-
 		diodes = [1,3,4,6,7,8,10,12,14,15,17,19,21,22,24,
 			26,31,33,34,36,38,40,41,43,45,47,49,51,54,57]
 		resistors = [2,5,9,11,13,16,18,20,23,25,30,
@@ -198,29 +193,11 @@ class LP:
 		Channel_enable = 0x8013|Vin
 		IO_control = 0x100|Iout #50 microA set on AIN pin2
 
-		#print("board = %s, sensor = %s" %(board,sensor))
-		#print(hex(Channel_enable))
-	
 		#Write to Channel_0 register: Update positive AIN for sensor
 		GPIO.output(board,GPIO.LOW)
 		spi.writebytes(bytes(write|0x09,8))
 		spi.writebytes(bytes(Channel_enable,16))
 		GPIO.output(board,GPIO.HIGH)
-
-		#if board == 38:
-		#	channel = [0x09,0xA,0xB,0xC,0xD,0xE,0xF,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18]
-		#	for x in channel:
-		#		GPIO.output(board,GPIO.LOW)
-		#		spi.writebytes(bytes(read|x,8))
-		#		ch_check = decimal(spi.readbytes(3))
-		#		GPIO.output(board,GPIO.HIGH)
-		#		print(hex(ch_check))
-		#		if ch_check != 0x0001:
-		#			print("Channel_%s is enabled. Disabling." %(channel.index(x)+1))
-		#			GPIO.output(board,GPIO.LOW)
-		#			spi.writebytes(bytes(write|x,8))
-		#			spi.writebytes(bytes(0x0001,16))
-		#			GPIO.output(board,GPIO.HIGH)		
 
 		#Write IO_Control_1 register: Update Iout AIN output	
 		GPIO.output(board,GPIO.LOW)
@@ -241,7 +218,6 @@ class LP:
  		#Coef. diodes (Voltage)
 		d = [2.06215201e4,-3.72240694e4,2.81733106e4,-1.78708069e4,9.20412215e3,
 			-3.73253855e3,1.12440290e3,-2.25464342e2,22.4784626]
-		#print("here: %s" %sensor)
 
 		while True:
 			#Read Status register: check that DOUT/RDY is low for conversion
@@ -249,12 +225,7 @@ class LP:
 			spi.writebytes(bytes(read|0x00,8))
 			status = decimal(spi.readbytes(1))
 			GPIO.output(board,GPIO.HIGH)
-			#print(hex(status))
 			time.sleep(0.01)
-
-			#print(hex(status))
-			#if board == 11:
-			#	print(hex(status))
 
 			if status == 0x40:
 				print("LP ADC error - check error register")
@@ -263,10 +234,9 @@ class LP:
 				error = decimal(spi.readbytes(3))
 				GPIO.output(board,GPIO.HIGH)
 				print("Error register: %s" %hex(error))
-				#time.sleep(0.01)
-
 				output = 11111
 				break
+
 			elif status == 0x3:
 				print("Sensor %s - wrong channel error" %sensor)
 				output = 11111
@@ -275,7 +245,6 @@ class LP:
 			#If DOUT/RDY == low, then read conversion from the Data register:
 			#if 0x0 <= status and 0x0F >= status:
 			if status == 0x0:
-				#print("reading")
 				GPIO.output(board,GPIO.LOW)
 				spi.writebytes(bytes(read|0x02,8))
 				data = decimal(spi.readbytes(3))
@@ -286,44 +255,26 @@ class LP:
 
 				if sensor in diodes:
 					V = data*3.3/(2**(24)) #24bits to voltage w/ 3.3V reference
-					#print(data)
-					#print(V)
-					#output = V
 
 					V = V*0.5647/s[sensor][2]
-					#if sensor <= 21: #Bottom shield sensors
-					#	V = V*0.5653/s[sensor][2] #conversion at ~24.4C
-					#else: #Top shield sensors
-					#	V = V*0.57/s[sensor][2]	#conversion at ~22.3C
 
 					if data > 16700000:
-						#print("Sensor %s - N/C" %sensor)
 						output = 11111
 						break
 
 					output = polyD(V)-273.15
-					#output = V
 
 				elif sensor in resistors:
 					R = data*3.3/(2**(24)*50e-6) #24bits to resistance w/ 3.3V reference and 50microA excitation current
 					V = data*3.3/(2**(24))
-					#print(data)					
-					#print(R)
-					#print(R*50e-6)
 
 					R = R*109.605/s[sensor][2]
-					#if sensor <= 21: 
-					#	R = R*109.5/s[sensor][2] #conversion at ~24.4C
-					#else:
-					#	R = 108.96*R/s[sensor][2] #conversion at ~23C
 
 					if data > 16700000:
-						#print("Sensor %s - N/C" %sensor)
 						output = 11111
 						break	
 			
 					output = polyR(R)-273.15
-					#output = R
 				break
 
 			#elif 0x0 < status and 0x0F >= status:
@@ -331,11 +282,5 @@ class LP:
 			#	output = 11111
 			#	break
 
-				#if board == 11:
-				#	print(output)
-					#output = R
-				#output = data
-		#output = data
-		#print(output)
 		return output
 	
