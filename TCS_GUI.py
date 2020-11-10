@@ -1,12 +1,14 @@
 import sys, serial, os, time, datetime, pytz
 import RPi.GPIO as GPIO
+from pexpect import pxssh
+import numpy as np
+
 from PyQt5 import QtWidgets, uic, QtCore
 from PyQt5.QtCore import QThread, pyqtSignal
 from tcs import Ui_TCS
+
 import TEMP as temp #HP sensor routine
 import low_p_temp_boards as lowp
-from pexpect import pxssh
-import numpy as np
 import PID
 
 import matplotlib
@@ -18,20 +20,10 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 ############################################################
 # Setup
 ############################################################
-
-ser=serial.Serial(port='/dev/serial0',baudrate=115200,bytesize=serial.EIGHTBITS,timeout=0)
-
-#Relay:GPIO pin
-#relay={1:29,2:31,3:32,4:33,5:36,6:37,7:38,8:11,9:12,10:13,11:15,12:16,13:18,14:22,
-#	15:29,16:31,17:32,18:33,19:36,20:37,27:35,28:40}
-
-relay={1:29,2:31,3:32,4:33,5:36,6:37,7:7,8:11,9:12,10:13,11:15,12:16,13:18,14:22,
-	15:29,16:31,17:32,18:33,19:36,20:37,27:35,28:40}
-
-GPIO.setwarnings(False)
-GPIO.setmode(GPIO.BOARD)
-
-#Setup communication with RPi2 in order to have access to its relays
+'''
+#Setup communication with RPi2 in order to have access to its relays 
+#** Sometimes causes issues toggling RPi2 relays when using pxssh to run relay_feed.py **
+print('Logging into RPi2 ...')
 lnk = pxssh.pxssh()
 hn = '10.212.212.70'
 us = 'fhire'
@@ -39,16 +31,20 @@ pw = 'WIROfhire17'
 lnk.login(hn,us,pw)
 lnk.sendline('python Desktop/FHiRE-TCS/relay_feed.py')
 lnk.prompt()
-print('SSH set up with tcsP2. Relay_feed.py running.')
+print('SSH set up with RPi2. Relay_feed.py running.')
+time.sleep(5)
+'''
+ser=serial.Serial(port='/dev/serial0',baudrate=115200,bytesize=serial.EIGHTBITS,timeout=0)
 
-#Used to remove byte messages during UART comm.
-def blockPrint():
-	sys.stdout = open(os.devnull,'w')
-def enablePrint():
-	sys.stdout = sys.__stdout__
+#Relay:GPIO pin
+relay={1:29,2:31,3:32,4:33,5:36,6:37}
 
-hp = temp.TEMP() #TEMP class for reading HP sensors 
-lp = lowp.LP() #LP class for reading LP boards
+#frequency for RPi1/LPboard PWM (0.1 = cycle every 10 sec)
+#** RPi2 freq needs to be changed manually in relay_feed.py **
+frequency = 0.1 
+
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BOARD)
 
 #Setup relays on RPi1
 def GPIO_setup(pin):
@@ -60,6 +56,15 @@ for key, value in relay.items():
 	if key <= 6:
 		GPIO_setup(value)
 
+#Used to remove byte messages during UART comm.
+def blockPrint():
+	sys.stdout = open(os.devnull,'w')
+def enablePrint():
+	sys.stdout = sys.__stdout__
+
+hp = temp.TEMP() #TEMP class for reading HP sensors 
+lp = lowp.LP() #LP class for reading LP boards
+
 start = time.time()		
 
 #Main PyQt5 window
@@ -68,10 +73,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		super(MainWindow, self).__init__(*args, **kwargs)
 		self.setupUi(self)
 		
+		#self.rpthread = Rpi2Thread()
+		#self.rpthread.start()
+
 		self.hpthread = HPSensorThread()
 		self.hpthread.start()
-		#self.hpthread.signal.connect(self.hp_update)
-		#self.hpthread.signal2.connect(self.timer_update)
 
 		self.lpthread = LPSensorThread()
 		self.lpthread.start()
@@ -80,9 +86,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 
 		self.pwmthread = []
 		for x in range(6):
-			self.pwmthread.append(LPpwmThread(x+21,0.1,0))
+			self.pwmthread.append(LPpwmThread(x+21,frequency,0))
 			self.pwmthread[x].start()
-			time.sleep(0.1)
 
 		#Show HP sensors 2,7,10 as off
 		self.cb_hp2.setText("off")
@@ -92,10 +97,18 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		self.PWM_setup()
 		self.PID_setup()
 
+		#Setup plot widgets
 		self.pb_graph.pressed.connect(self.graph)
 		self.lay = QtWidgets.QVBoxLayout(self.graphWidget)
 		self.lay.setContentsMargins(0,0,0,0)
+
+		#Setup plot and toolbar
+		self.fig, self.ax1 = plt.subplots()
+		self.plotWidget = FigureCanvas(self.fig)
+		self.lay.addWidget(self.plotWidget)
+		self.addToolBar(QtCore.Qt.TopToolBarArea,NavigationToolbar(self.plotWidget,self))
 		
+		#Sensor - combo box widget pairings
 		self.hp_sensors = {
 			0:[self.cb_hp1,1],
 			1:[self.cb_hp3,3], 
@@ -174,12 +187,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			#58: ,
 			#59: ,
 			#60: }
-		
-		self.fig, self.ax1 = plt.subplots()
-		self.plotWidget = FigureCanvas(self.fig)
-		self.lay.addWidget(self.plotWidget)
-
-		self.addToolBar(QtCore.Qt.TopToolBarArea,NavigationToolbar(self.plotWidget,self))
 
 #########################################################################
 # PWM and PID Loop Methods
@@ -190,13 +197,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		self.pwm = []
 		for x in range(28):
 			x +=1
-			#if x <= 5 or x == 7:
 			if x <= 6:
-				#if x == 7:
-				#	x = 6
-				self.pwm.append(GPIO.PWM(relay[x],0.1)) #cycle every 10 sec
+				self.pwm.append(GPIO.PWM(relay[x],frequency))
 				self.pwm[x-1].start(100)
-			#elif 8 <= x <= 20 or x in [6,27,28]:
 			elif 7 <= x <= 20 or x in [27,28]:
 				pass #PWM setup in relay_feed.py on RPi2
 			elif 21 <= x <= 26:
@@ -229,13 +232,20 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 # HP and LP Temperature Methods
 #######################################################################
 
-	#Graph temperatures for given HP sensors for range specified by initial and final times
-	#Sensors format: 1 3 4
-	#Time format: Y-m-d H:M:S
-	#Graph all measurements by keeping initial and final times unspecified
+	#Graphing options:
+	# -Graph HP/LP temperatures via checking respective combo boxes
+	# -Graph PID average temperatures via typing respective PID numbers into the sensor line edit
+	#	-Format: 1 3 4
+	# -Display RMS of all individual HP/LP sensors as color spectrum via typing "all" into the sensor line edit
+	#	-Make sure to erase text to graph temperatures
+	# -Graph temperatures for given sensors for range specified by initial and final times
+	#	-Time format: Y-m-d H:M:S (** Remove time option? You have a toolbar to zoom. **)
+	#		-** Currently wrong format? Using elapsed time at the moment. **
+	#	-Graph all measurements by keeping initial and final times unspecified
 	def graph(self):
 		Averaging()
 
+		#File setup ------------------------------------------------------------
 		hp_file = 'tempLog.dat'
 		lpr_file = 'LPresistorsLog.dat'
 		lpd_file = 'LPdiodesLog.dat'
@@ -250,35 +260,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		lpd = np.loadtxt(lpd_file,unpack=True,skiprows=1)
 		avgT = np.loadtxt(avg_file,unpack=True,skiprows=1)
 
-		try:
-			utc = hp[0,:]
-
-		except:
-			print "Not enough values recorded (>1)."
-			return
-
-		try:
-			utcr = lpr[0,:]
-			utcd = lpd[0,:]	
-		except:
-			print "Not enough values recorded (>1)."
-			return			
-
-		#self.sensors = self.ln_sensor.text()
-		self.time_initial = self.ln_to.text()
-		self.time_final = self.ln_tf.text()
-
-		if not self.time_initial and not self.time_final:
-			hp_index1 = lpr_index1 = lpd_index1 = 0 
-			hp_index2 = lpr_index2 = lpd_index2 = None
-
+		#Sensor:column in dat file
 		diode_column = {1:1,3:2,5:3,7:4,8:5,10:6,12:7,14:8,15:9,17:10,19:11,21:12,
 			22:13,24:14,26:15,31:16,33:17,34:18,36:19,38:20,40:21,41:22,43:23,
 			45:24,47:25,49:26,51:27,54:28}
 		resistor_column = {2:1,4:2,6:3,9:4,11:5,13:6,16:7,18:8,20:9,23:10,25:11,
 			30:12,32:13,35:14,37:15,39:16,42:17,44:18,46:19,48:20,50:21,52:22,53:23,55:24}
-		hp_column =  {1:1,3:2,4:3,5:4,6:5,8:6,9:7} #HPsensor:column
+		hp_column =  {1:1,3:2,4:3,5:4,6:5,8:6,9:7} 
+
+
 		
+		#Display RMS of each sensor as part of a color spectrum ---------------------------------
 		if self.ln_sensor.text() == 'all':
 			red = 'background-color:#ff9999'
 			orange = 'background-color:#ffcc99'
@@ -334,10 +326,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 
 				self.hp_sensors[x][0].setStyleSheet(style)
 			return
-		self.ax1.cla()
 
+		self.ax1.cla() #clear plot
+
+		#Plot PID average temperatures -----------------------------------------------
 		avg_sensors = [int(n) for n in self.ln_sensor.text().split()]
-
 		for x in range(28):
 			x += 1
 			x2 = avgT[0,:]/3600
@@ -349,32 +342,29 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			#print('PID %s: %.2fC (RMS:%.2fmK)' %(x,avg,rms))
 			if x in avg_sensors:
 				self.ax1.plot(x2,y,label="PID%s:RMS=%.2fmK" %(x,rms))	
-
-
-		lp_checked = []; hp_checked = []
-		for x in self.lp_sensors.keys():
-			if self.lp_sensors[x].isChecked():
-				lp_checked.append(x+1)
-				
-		for x in self.hp_sensors.keys():
-			if self.hp_sensors[x][0].isChecked():
-				hp_checked.append(self.hp_sensors[x][1])
-
-		hp_col = []; lpr_col = []; lpd_col = []
-		lpr_checked = []; lpd_checked =[]
-		if lp_checked:
-			for x in lp_checked:
-				if x in diode_column.keys():
-					lpd_col.append(diode_column.get(x))
-					lpd_checked.append(x)
-					
-				elif x in resistor_column.keys():
-					lpr_col.append(resistor_column.get(x))
-					lpr_checked.append(x)
-		if hp_checked:
-			for x in hp_checked:
-				hp_col.append(hp_column.get(x))	
 	
+		#Option to set range of times ------------------------------------------------------------
+		try:
+			utc = hp[0,:]
+
+		except:
+			print "Not enough values recorded (>1)."
+			return
+
+		try:
+			utcr = lpr[0,:]
+			utcd = lpd[0,:]	
+		except:
+			print "Not enough values recorded (>1)."
+			return			
+
+		self.time_initial = self.ln_to.text()
+		self.time_final = self.ln_tf.text()
+
+		if not self.time_initial and not self.time_final:
+			hp_index1 = lpr_index1 = lpd_index1 = 0 
+			hp_index2 = lpr_index2 = lpd_index2 = None
+
 		if self.time_initial:
 			#Convert given date & time to local epoch seconds
 			to = self.time_initial.split()
@@ -390,7 +380,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 				#print "Improper initial time."
 				pass
 			utc1 = float(utc1)
-
 			
 			#Find closest time in tempLog.dat and get index
 			hp_index1 = min(range(len(utc)), key=lambda i: abs(utc[i]-utc1))
@@ -416,7 +405,30 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			lpr_index2 = min(range(len(utcr)), key=lambda i: abs(utcr[i]-utc2))
 			lpd_index2 = min(range(len(utcd)), key=lambda i: abs(utcd[i]-utc2))
 
-		
+		#Plot individual HP/LP sensor temperatures based on checked combo boxes -----------------
+		lp_checked = []; hp_checked = []
+		for x in self.lp_sensors.keys():
+			if self.lp_sensors[x].isChecked():
+				lp_checked.append(x+1)
+				
+		for x in self.hp_sensors.keys():
+			if self.hp_sensors[x][0].isChecked():
+				hp_checked.append(self.hp_sensors[x][1])
+
+		hp_col = []; lpr_col = []; lpd_col = []
+		lpr_checked = []; lpd_checked =[]
+		if lp_checked:
+			for x in lp_checked:
+				if x in diode_column.keys():
+					lpd_col.append(diode_column.get(x))
+					lpd_checked.append(x)
+					
+				elif x in resistor_column.keys():
+					lpr_col.append(resistor_column.get(x))
+					lpr_checked.append(x)
+		if hp_checked:
+			for x in hp_checked:
+				hp_col.append(hp_column.get(x))	
 
 		if hp_col:
 			for i in range(len(hp_col)):
@@ -444,16 +456,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 				self.ax1.plot(x,y,label="LP%s:RMS=%.2fmK" %(lpd_checked[i],rms))
 
 		self.fig.canvas.draw_idle()
-
 		self.ax1.set_xlabel("Time (h)"); self.ax1.set_ylabel("Temperature [C]")
 		self.ax1.legend(loc="upper right")
 
+	#Update PID loops and PWM of heaters
 	def PID_update(self):
 		Averaging()
+
 		avg_file = 'averageTemp.dat'
 		avgT = np.loadtxt(avg_file,unpack=True,skiprows=1)
 		avgT = np.transpose(avgT)
-		if len(avgT) == 29:
+		if len(avgT) == 29: #When there's only one line of data in file
 			avgT = avgT[1:29]
 		else:
 			avgT = avgT[-1,1:29]
@@ -468,50 +481,49 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 	
 		for x in range(len(avgT)):
 			heat = x + 1
+		
+			#Get new Duty Cycle values from PID loops based on most recent PID average temperatures
 			self.pid[x].update(avgT[x])
 			control = self.pid[x].output
 			control = max(min(float(control),10),0) #10% limit -- is this low enough?
-			relay[x+1].setText(str(control)+chr(37))
-			control = 25
+			relay[x+1].setText('%.2f%%' %control)
 
-
+			#Update PWM Duty Cycle
 			if 7 <= heat <= 20 or heat in [27,28]: #Rpi 2
-				pass
-				#control = control + 2*heat
-				#print('PID %s: %s%% (%ss)' %(heat,control,(control*0.1)))
-				#blockPrint()
-				#ser.write(str(heat)+" "+str(control))
-				#enablePrint()
-				
-				#pin = ser.read()
-				#time.sleep(0.1)
-				#r = ser.inWaiting()
-				#pin += ser.read(r)
-				#if pin:
-				#	print(pin)
+				#pass
+				print('PID %s: %.2f%% (%.2fs)' %(heat,control,(control/(100.0*frequency))))
+				blockPrint()
+				ser.write(str(heat)+" "+str(control))
+				enablePrint()
+				time.sleep(0.1)
 
 			elif heat <= 6: #Rpi 1
-				pass
-				#print('PID %s: %s%%' %(heat,control))
-				#if heat == 7:
-				#	heat = 6
-				#self.pwm[heat-1].ChangeDutyCycle(100-control)
+				#pass
+				print('PID %s: %.2f%% (%.2fs)' %(heat,control,(control/(100.0*frequency))))
+				self.pwm[heat-1].ChangeDutyCycle(100-control)
+				time.sleep(0.1)
 
 			elif 21 <= heat <=26: #LP boards
-				#pass
-				control = control + 2*heat
-				print('PID %s: %s%%' %(heat,control))
-				self.pwmthread[heat-21].signal.emit([heat,0.1,control])
+				#pass			
+				if control/(100.0*frequency) < 0.0006:
+					control = 0
+					freq2 = control/(100.0*0.0006)
+					print('PID %s: %.2f%% (%.2fs)' %(heat,control,(control/(100.0*freq2))))
+					self.pwmthread[heat-21].signal.emit([heat,freq2,control])
+				else:
+					print('PID %s: %.2f%% (%.2fs)' %(heat,control,(control/(100.0*frequency))))
+					self.pwmthread[heat-21].signal.emit([heat,frequency,control])
+				time.sleep(0.1)
 
 			self.readConfig(x) #Update PID coefficients and target temp
+			time.sleep(0.5)
 		
 
 	#Terminates all QThreads, toggles all relays off, and cleans up GPIO pins
 	def closeEvent(self,event):
-		reply = QtWidgets.QMessageBox.question(self,'Window Close', 'Are you sure you want to close the window?',
-			QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+		reply = QtWidgets.QMessageBox.question(self,'Window Close', 'Are you sure you want to close the window?', QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
 		if reply == QtWidgets.QMessageBox.Yes:
-			self.lpthread.stop(); 
+			self.lpthread.stop() 
 			self.hpthread.stop()
 			for x in range(28):
 				x += 1
@@ -522,8 +534,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 					ser.write('1111 1')
 					enablePrint()
 				elif 21 <= x <= 26:
-				#elif 21 <= x <= 22:
 					self.pwmthread[x-21].stop()
+			#self.rpthread.stop()
 			plt.close('all')
 			GPIO.cleanup()
 			event.accept()
@@ -531,6 +543,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		else:
 			event.ignore()
 
+#Calculate average temperature of LP sensors around each heating pad/PID loop
 def Averaging():
 	lpr_file = 'LPresistorsLog.dat'
 	lpd_file = 'LPdiodesLog.dat'
@@ -588,17 +601,13 @@ def Averaging():
 ################################################################################
 			
 #QThread for reading HP sensor temperatures from TEMP.py
-#*Need to implement averaging sequence for HP sensors too*
 class HPSensorThread(QThread):
-	signal = pyqtSignal('PyQt_PyObject')
-	signal2 = pyqtSignal('PyQt_PyObject')
 
 	def __init__(self):
 		QThread.__init__(self)
 		self.j = 0
 	
 	def run(self):
-		#time.sleep(5)
 		for s in range(7): 
 			try:
 				hpboard = hp.getTemp(s)
@@ -614,14 +623,6 @@ class HPSensorThread(QThread):
 			while elapsed < total:
 				elapsed = time.time() - tic
 
-				#update countdown label
-				if elapsed < total:
-					statement = '%.2f/%.2f sec' %(elapsed,total)
-					percent = elapsed/total*100
-					self.signal2.emit([statement,percent])
-				else:
-					self.signal2.emit("Updating")
-
 				averaging = []
 				for s in range(7): 
 					try:
@@ -635,8 +636,8 @@ class HPSensorThread(QThread):
 
 					if hpboard >= 35 or hpboard <= 10:
 						if s != 3:
-							#print("Sensor %s - unreasonable reading (%sC)" %((s+1),lpboard))
-							hpboard = np.nan
+							print("HP Sensor %s - unreasonable reading (%sC)" %((s+1),hpboard))
+						hpboard = np.nan
 
 					averaging.append(hpboard)
 
@@ -670,12 +671,9 @@ class HPSensorThread(QThread):
 
 			wait = 5
 			if wait*60 > total:
-				#print("Waiting %s min" %wait)
-				self.signal2.emit("Waiting %s min" %wait)
+				#print("HP: Waiting %s min" %wait)
 				time.sleep((wait*60)-total) #reading intervals 
 			total_elapsed = time.time() - start
-			#print("HP: %s" %total_elapsed)
-			#print("HP: %s" %time.time())
 
 	def stop(self):
 		self.terminate()
@@ -697,8 +695,8 @@ class LPSensorThread(QThread):
 	def run(self):
 		print("Starting thread")
 		#Runs through sensors once - sensors tend to return unreasonable values first run
-		for s in range(61): #9 LP outside (sensor#27-29,56-61) (not wired yet)
-			if s in [26,27,28,55,56,57,58,59,60]:
+		for s in range(61): 
+			if s in [26,27,28,55,56,57,58,59,60]: #9 LP outside (sensor#27-29,56-61) (not wired yet)
 				pass
 			else:
 				try:
@@ -707,14 +705,13 @@ class LPSensorThread(QThread):
 					print("Error reading LP sensor %s" %s)
 					pass
 				time.sleep(0.05)
-		print("First run")
+		print("LP: First run complete")
 
 		while True:
 			lptemp = []
 			tic = time.time()
 			elapsed = 0; i = 0
 			total = 20 #total time in seconds between temp/duty cycle updates
-			#print("1")
 
 			while elapsed < total:
 				elapsed = time.time() - tic
@@ -750,10 +747,9 @@ class LPSensorThread(QThread):
 							print("Sensor %s - 11111 error" %(s+1))
 
 						if lpboard >= 35 or lpboard <= 10:
-							if s != 1:
+							if s != 1: #sensor N/C
 								print("Sensor %s - unreasonable reading (%sC)" %((s+1),lpboard))
 							lpboard = np.nan
-
 
 						averaging.append(lpboard)
 						time.sleep(0.01)
@@ -798,11 +794,6 @@ class LPSensorThread(QThread):
 						tempLog.write("%.6s    " %item)
 					else:
 						tempLog.write("%.6s " %item)
-				#tempLog.write('\nstdev	')
-				#for item in lptempD:
-				#	item_std = lpstdD[lptempD.index(item)]
-				#	tempLog.write("%.6s " %item_std)
-
 
 			with open('LPresistorsLog.dat','a') as tempLog:
 				#current_time = datetime.datetime.now().strftime("%s") #local time
@@ -815,29 +806,38 @@ class LPSensorThread(QThread):
 				else:
 					tempLog.write('\n%.0f		'%(current_time))
 				for item in lptempR:
-					#item_std = lpstdR[lptempR.index(item)]
-					#tempLog.write("%.5s(%.4s) " %(item,item_std))
 					if item == np.nan:
 						tempLog.write("%.6s    " %item)
 					else:
 						tempLog.write("%.6s " %item)
-				#tempLog.write('\nstdev	')
-				#for item in lptempR:
-				#	item_std = lpstdR[lptempR.index(item)]
-				#	tempLog.write("%.6s " %item_std)
-
 			wait = 5
 			if wait*60 > total:
 				self.signal.emit(True)
 				print("Waiting %s min" %wait)
 				self.signal2.emit("Waiting %s min" %wait)
 				time.sleep((wait*60)-total) #reading intervals
-				#Averaging()
 				
 			total_elapsed = time.time() - start
-			#print("LP: %s" %total_elapsed)
-			#print("LP: %s" %time.time())
 					
+	def stop(self):
+		self.terminate()
+
+#** Currently not in use because pxssh/relay_feed.py need to be running before temperature threads **
+#Setting up pxssh as a thread vs at top of script removes loading time for GUI display
+class Rpi2Thread(QThread):
+	def __init__(self):
+		QThread.__init__(self)
+	def run(self):
+		#Setup communication with RPi2 in order to have access to its relays
+		print('Logging into RPi2 ...')
+		lnk = pxssh.pxssh()
+		hn = '10.212.212.70'
+		us = 'fhire'
+		pw = 'WIROfhire17'
+		lnk.login(hn,us,pw)
+		lnk.sendline('python Desktop/FHiRE-TCS/relay_feed.py')
+		lnk.prompt()
+		print('SSH set up with tcsP2. Relay_feed.py running.')
 	def stop(self):
 		self.terminate()
 
@@ -854,25 +854,27 @@ class LPpwmThread(QThread):
 		#print 'PWM thread created: %s' %[sensor,freq,control]
 
 	def run(self):
+		#time.sleep(20)
 		while True:
 			tic = time.clock()
 
 			self.signal.connect(self.update)
-			time.sleep(0.1)
 
 			if self.timeON > 0:
 				lp.Relay_ON(self.sensor)
 				elapsed = time.clock() - tic
-				print 'Relay %s ON: %s' %(self.sensor, self.timeON - elapsed)
-				time.sleep(self.timeON - elapsed)
+				#print 'Relay %s ON: %s' %(self.sensor, self.timeON - elapsed)
+				if self.timeON > elapsed: #When timeOn > 0.0006sec
+					time.sleep(self.timeON - elapsed)
 	
 			tic = time.clock()
 
 			if self.timeOFF > 0:
 				lp.Relay_OFF(self.sensor)
 				elapsed = time.clock() - tic
-				print 'Relay %s OFF: %s' %(self.sensor, self.timeOFF - elapsed)
-				time.sleep(self.timeOFF - elapsed)
+				#print 'Relay %s OFF: %s' %(self.sensor, self.timeOFF - elapsed)
+				if self.timeOFF > elapsed:
+					time.sleep(self.timeOFF - elapsed)
 
 	def stop(self):
 		print('Turning off %s' %self.sensor)
@@ -890,12 +892,35 @@ class LPpwmThread(QThread):
 
 def main():
 	app = QtWidgets.QApplication(sys.argv)
-	#app.setStyle('cleanlooks')
 	window = MainWindow()
 	window.show()
 	sys.exit(app.exec_())
 
 if __name__=='__main__':
-	main()
+	try:
+		main()
+
+	except KeyboardInterrupt:
+		#** Doesn't work **
+		print("*Interrupted")
+		main.lpthread.stop() 
+		main.hpthread.stop()
+		for x in range(28):
+			x += 1
+			if x <= 6:
+				main.pwm[x-1].stop()
+			elif x == 7:
+				blockPrint()
+				ser.write('1111 1')
+				enablePrint()
+			elif 21 <= x <= 26:
+				main.pwmthread[x-21].stop()
+		#main.rpthread.stop()
+		plt.close('all')
+		GPIO.cleanup()
+		try:
+			sys.exit(0)
+		except SystemExit:
+			os._exit(0)
 
 
