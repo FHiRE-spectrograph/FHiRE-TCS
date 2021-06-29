@@ -1,4 +1,8 @@
+#TCS_GUI.py
+#last updated: 06/11/2021
+
 import sys, serial, os, time, datetime, pytz
+import matplotlib.dates as mdates
 import RPi.GPIO as GPIO
 from pexpect import pxssh
 import numpy as np
@@ -12,7 +16,7 @@ import TEMP as temp  # HP sensor routine
 import low_p_temp_boards as lowp  # LP sensor routine
 import PID
 
-# Setup interface's graph
+# Setup interface's graph.
 import matplotlib
 matplotlib.use('QT5Agg')
 import matplotlib.pylab as plt
@@ -23,9 +27,9 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 # Setup
 ############################################################
 
-# Setup communication with RPi2 in order to have access to its relays 
+# Setup communication with RPi2 in order to have access to its relays.
 # ** Sometimes causes issues toggling RPi2 relays when using pxssh to 
-#    run relay_feed.py **\
+#    run relay_feed.py. **\
 # ^^^ Does it still though? 
 print('Interface will load shortly. Logging into RPi2 ...')
 lnk = pxssh.pxssh()
@@ -39,20 +43,20 @@ print('Admin: SSH set up with RPi2. relay_feed.py running.')
 ser = serial.Serial(port='/dev/serial0', baudrate=115200, 
 		    bytesize=serial.EIGHTBITS, timeout=0)
 
-# frequency for RPi1/LPboard PWM (0.1 = cycle every 10 sec)
-# ** RPi2 freq needs to be changed manually in its script relay_feed.py **
+# frequency for RPi1/LPboard PWM (0.1 = cycle every 10 sec).
+# ** RPi2 freq needs to be changed manually in its script relay_feed.py. **
 frequency = 1./60
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BOARD)
 
-# Setup relays on RPi1
+# Setup relays on RPi1.
 def GPIO_setup(pin):
 	GPIO.setup(pin, GPIO.OUT)
 	GPIO.output(pin, GPIO.HIGH)
 	print "Relay: %s pin setup" %pin
 
-# Relay number:GPIO pin on RPi1
+# Relay number:GPIO pin on RPi1.
 relay = {1:29, 2:31, 3:32, 4:33, 5:36, 6:37}  
 
 for key, value in relay.items():
@@ -70,12 +74,14 @@ lp = lowp.LP()  # LP class for reading LP boards
 
 start = time.time()		
 
-# Main PyQt5 window
+# Main PyQt5 window.
 class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 	def __init__(self, *args, **kwargs):
 		super(MainWindow, self).__init__(*args, **kwargs)
 		self.setupUi(self)
 		
+		# Currently, not working? See thread below.
+		# It's not important to run anyways.
 		#self.rpthread = Rpi2Thread()
 		#self.rpthread.start()
 
@@ -100,25 +106,19 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		self.cb_hp10.setText("off")
 		self.cb_hp10.setStyleSheet('background-color: lightgrey')
 
-		# Currently, only HP sensors 1,5,6 are connected. **Need to 
-		# find where the other sensors are disconnected**
-		self.cb_hp1.setStyleSheet('background-color: palegreen')
-		self.cb_hp5.setStyleSheet('background-color: palegreen')
-		self.cb_hp6.setStyleSheet('background-color: palegreen')
-
-		# Setup plot widgets
+		# Setup plot widgets.
 		self.pb_graph.pressed.connect(self.graph)
 		self.lay = QtWidgets.QVBoxLayout(self.graphWidget)
 		self.lay.setContentsMargins(0, 0, 0, 0)
 
-		# Setup plot and toolbar
+		# Setup plot and toolbar.
 		self.fig, self.ax1 = plt.subplots()
 		self.plotWidget = FigureCanvas(self.fig)
 		self.lay.addWidget(self.plotWidget)
 		self.addToolBar(QtCore.Qt.TopToolBarArea, 
 				NavigationToolbar(self.plotWidget, self))
 		
-		# Sensor - combo box widget pairings
+		# Sensor - combo box widget pairings.
 		self.hp_sensors = {
 			0:[self.cb_hp1,1],
 			1:[self.cb_hp3,3], 
@@ -131,7 +131,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			#8: self.cb_hp9.setText("%.2f C" %data[1]),
 			#9: self.cb_hp10.setText("%.2f C" %data[1])} 
 
-		# **Need to add combo boxes for the external sensors in QtCreator.**
+		# **Need to add combo boxes for the external 
+		# sensors in QtCreator. There's no way to 
+		# plot external sensors from the TCS GUI right now.**
+		# I've been using temp-to-voltage.py script to 
+		# manually graph external sensors.
 		self.lp_sensors = {
 			0: self.cb_lp1_top,  # TopDiode-01
 			1: self.cb_lp2_top,  # TopResistor-02
@@ -224,15 +228,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 	#  and final times
 	#	-Time format: Y-m-d H:M:S (** Remove time option? You have a 
 	#        toolbar to zoom. **)
-	#		-** Currently wrong format? Using elapsed time at the moment. **
-	#	-Graph all measurements by keeping initial and final times unspecified
+	#		-** Currently wrong format? Using elapsed 
+	#		    time at the moment. **
+	#	-Graph all measurements by keeping initial and final 
+	#        times unspecified
 	# **Add option to calculate RMS over a specific time range?
 	#
 	def graph(self):
-		Averaging_control()
 		Averaging_monitor()
+		Averaging_control()
 
-		# File setup ------------------------------------------------------------
+		# File setup --------------------------------------------
 		hp_file = 'tempLog.dat'
 		lpr_file = 'LPresistorsLog.dat'
 		lpd_file = 'LPdiodesLog.dat'
@@ -260,7 +266,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		hp_column =  {1:1, 3:2, 4:3, 5:4, 6:5, 8:6, 9:7} 
 
 		#------------------------------------------------------------
-		# Display RMS of each sensor as part of a color spectrum. 
+		#
+		# Display RMS of each sensor as part of a color spectrum. Not
+		# really an important function any more. This was used for testing
+		# when we were troubleshooting high RMS issues with the LP sensors.
+		#
 		if self.ln_sensor.text() == 'all':
 			red = 'background-color: #ff9999'
 			orange = 'background-color: #ffcc99'
@@ -353,7 +363,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 		#
 		# Option to set range of times -- doesn't really work anymore. 
 		# Written for utc, not elapsed time.
-		# Keep initial/final time line edits empty for the mean time.
+		# Keep initial/final time line edits empty in the mean time.
 		#
 		try:
 			utc = hp[0, :]
@@ -392,7 +402,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 					time1[0], time1[1], 
 					time1[2]).strftime("%s")  # Local time 
 			except:
-				#print "Improper initial time."
+				#print("Improper initial time.")
 				pass
 			utc1 = float(utc1)
 			
@@ -421,7 +431,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 							 time2[1], 
 							 time2[2]).strftime("%s") 
 			except:
-				#print "Improper final time."
+				#print("Improper final time.")
 				pass
 			utc2 = float(utc2)
 
@@ -546,9 +556,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_TCS):
 			event.ignore()
 
 # Pair diodes with their respective heating pad/PID loop
+# and save to a file. File is accessed by PID methods below.
 def Averaging_control():
 	lpd_file = 'LPdiodesLog.dat'
 	lpd = np.loadtxt(lpd_file, unpack=True, skiprows=1)
+
+	check = np.loadtxt('monitoringTemp.dat', unpack=True, skiprows=1)
 
 	diode_column = {
 		1:1,   3:2,   5:3,   7:4,   8:5,   10:6,  12:7,  14:8,  15:9,  17:10, 
@@ -566,11 +579,22 @@ def Averaging_control():
 	final = []
 	for x in LPHeating:
 		y = LPHeating[x][0]
+		# Simple attempt at replacing a diode reading with averaged
+		# resistor readings for a PID loop. Didn't work properly.
+		#if x == 9:
+		#	val_1 = lpd[diode_column.get(y)]
+		#	val_2 = check[9]
+		#	val = np.vstack((val_1, val_2))
+		#	val = np.mean(val, axis=0)
+		#else:			
+		#	val = lpd[diode_column.get(y)]
+
 		val = lpd[diode_column.get(y)]
 		if x == 1:
 			final = val
 		else:
 			final = np.vstack((final, val))
+			
 
 	with open('controlTemp.dat', 'a') as avgTemp:
 		avgTemp.seek(0,1)
@@ -588,7 +612,7 @@ def Averaging_control():
 #
 # Averages LP resistors around each diode to monitor and catch unreasonable 
 # diode temperatures. **Need to create method that replaces diode readings 
-# with resistors for PID loops if diode fails?**
+# with resistors for PID loops if diode fails.**
 #
 def Averaging_monitor():
 	lpr_file = 'LPresistorsLog.dat'
@@ -674,7 +698,7 @@ def compare():
 #  QThread Classes
 ################################################################################
 			
-# QThread for reading HP sensor temperatures from TEMP.py
+# QThread for reading HP sensor temperatures from TEMP.py.
 class HPSensorThread(QThread):
 
 	def __init__(self):
@@ -695,25 +719,22 @@ class HPSensorThread(QThread):
 
 				averaging = []
 				for s in range(7): 
-					if s not in [0,3,4]:
-						averaging.append(0)
-					else:
-						try:
-							hpboard = hp.getTemp(s)
-							print("HP %s: %.5s C" 
-							      %(s+2,hpboard))
-						except:
-							print("Error reading HP "
-							      "sensor %s" %s)
-							hpboard = 11111
+					try:
+						hpboard = hp.getTemp(s)
+						#print("HP %s: %.5s C" 
+						#      %(s+2,hpboard))
+					except:
+						print("Error reading HP "
+						      "sensor %s" %s)
+						hpboard = 11111
 
-						if hpboard >= 26 or hpboard <= 22:
-							hpboard = hp.getTemp(s)
+					if hpboard >= 26 or hpboard <= 20:
+						hpboard = hp.getTemp(s)
 
-						if hpboard >= 26 or hpboard <= 22:
-							hpboard = np.nan
+					if hpboard >= 26 or hpboard <= 20:
+						hpboard = np.nan
 	
-						averaging.append(hpboard)
+					averaging.append(hpboard)
 
 				if i == 0:
 					hptemp = averaging
@@ -728,7 +749,7 @@ class HPSensorThread(QThread):
 			total_elapsed = time.time() - start
 
 			with open('tempLog.dat', 'a') as tempLog:
-				current_time = total_elapsed
+				current_time = mdates.date2num(datetime.datetime.now())
 				if self.j == 0:
 					tempLog.seek(0,1)
 					tempLog.truncate(61)
@@ -776,7 +797,7 @@ class LPSensorThread(QThread):
 		print("Starting thread")
 		time.sleep(0.05)
 		total_minutes = 0
-		total = 2  # total PWM periods (period = 60sec) between measurements
+		total = 4  # total PWM periods (period = 60sec) between measurements
 
 		while True:
 			if total_minutes == 0:
@@ -793,7 +814,7 @@ class LPSensorThread(QThread):
 
 			total_minutes += 1
 
-			statement = "%s/%s minutes" %(total_minutes,total)
+			statement = "%s/%s minutes" %(total_minutes, total)
 			self.signal2.emit(statement)
 			print(statement)
 
@@ -811,23 +832,23 @@ class LPSensorThread(QThread):
 		#
 		while n < 1:
 			averaging = []
-			for s in range(61): #9 LP outside (sensor#27-29,56-61)
-				s = s+1
+			for s in range(61): 
+				s = s + 1
 
 				try:
 					lpboard = lp.getTemp(s)
 					time.sleep(0.01)
 				except:
-					print("Error reading sensor %s" %(s+1))
+					print("Error reading sensor %s" %(s + 1))
 					lpboard = 11111
 
 				#
-				# Sensor 5 reads as a resistor and external sensors
+				# The 9 external LP sensors (27-29, 56-61)
 				# need to be calibrated properly, so they're exempt
 				# from the temperature cutoffs.
 				#
 				if lpboard >= 26 or lpboard <= 22 \
-				   and s not in [5,27,28,29,56,57,58,59,60,61]:
+				   and s not in [27,28,29,56,57,58,59,60,61]:
 					lpboard = lp.getTemp(s)
 
 				if lpboard >= 26 or lpboard <= 22 \
@@ -864,8 +885,8 @@ class LPSensorThread(QThread):
 			lptempR.append(lptemp[s - 1])
 
 		total_elapsed = time.time() - start	
-		current_time = total_elapsed
-		print("Time elapsed: %.8s seconds" %current_time)
+		current_time = mdates.date2num(datetime.datetime.now())
+		print("Time elapsed: %.8s seconds" %total_elapsed)
 
 		with open('LPdiodesLog.dat', 'a') as tempLog:
 			if self.j == 0:
@@ -903,12 +924,13 @@ class LPSensorThread(QThread):
 		# the enclosure will have affected calibration.
 		#
  
-		#baseline_hour = 0.16
-		#if total_elapsed > baseline_hour*3600:  # baseline = 2 data points
-		#	pid = True  # start PID loops
-		#else:
-		#	pid = False  # take baseline measurements
-		pid = True
+		baseline_hour = 0.15
+		if total_elapsed > baseline_hour*3600:  # baseline = 3 data points
+			pid = True  # start PID loops
+		else:
+			pid = False  # take baseline measurements
+		#pid = True
+		#pid = False
 
 		self.signal.emit(pid)
 	
@@ -1001,7 +1023,7 @@ class PIDThread(QThread):
 		baseline = baseline[1:30]
 		config = np.loadtxt('pid.conf', unpack=True, skiprows=1, 
 				    usecols=(0,1,2,3,4))
-		config[1,:] = baseline + 0.5
+		config[1,:] = baseline + 1.0
 		#config[1,:] = config[1,:] + 0.5
 		with open('pid.conf','a') as config_file:
 			config_file.seek(0,1)
@@ -1016,8 +1038,8 @@ class PIDThread(QThread):
 	# Update PID loops and PWM of heaters.
 	def PID_update(self):
 		tic = time.time()
+		Averaging_monitor()
 		Averaging_control()
-		#Averaging_monitor()
 
 		time.sleep(0.1)
 		avg_file = 'controlTemp.dat'
@@ -1026,7 +1048,7 @@ class PIDThread(QThread):
 
 		if self.first == True:
 			# Uncomment when a baseline has been measured beforehand.
-			#self.calculate_baseline()
+			self.calculate_baseline()
 			self.first = False
 			print('################################')
 			print('Begin PID loop control')
