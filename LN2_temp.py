@@ -8,7 +8,7 @@ class LN2_Temp:
 		self.lp = lowp.LP()
 		
 	def Run(self):
-		temp = self.lp.getTemp(61)
+		temp = self.lp.getTemp(27)
 		temp = float(temp)
 		self.save_dat(temp)
 	
